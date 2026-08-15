@@ -25,7 +25,7 @@ def list_worlds():
                         if line.strip().startswith("world_name"):
                             name = line.split("=", 1)[1].strip()
                             break
-                except:
+                except (OSError, IndexError):
                     pass
                 worlds.append({"name": name, "dir": d.name, "path": str(d)})
     return worlds

@@ -122,22 +122,26 @@ def call_llm(api_key, base_url, model, user_input):
         "--max-time", "180",
     ]
 
-    try:
-        result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=200)
-        if result.returncode != 0:
-            raise Exception(f"curl 错误: {result.stderr[:200]}")
-        resp = json.loads(result.stdout)
-        if "error" in resp:
-            err = resp["error"]
-            raise Exception(f"API 错误: {err.get('message', str(err))[:200]}")
-        content = resp["choices"][0]["message"]["content"]
-        return content
-    except subprocess.TimeoutExpired:
-        raise Exception("API 调用超时 (200秒)，请尝试更简单的描述或换更快的模型")
-    except json.JSONDecodeError:
-        raise Exception(f"API 返回非 JSON: {result.stdout[:200]}")
-    except Exception as e:
-        raise Exception(str(e))
+    # 超时/网络错误重试一次; API 错误 (鉴权/额度) 不重试
+    last_err = None
+    for attempt in range(2):
+        try:
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=200)
+            if result.returncode != 0:
+                raise ConnectionError(f"curl 错误: {result.stderr[:200]}")
+            resp = json.loads(result.stdout)
+            if "error" in resp:
+                err = resp["error"]
+                raise RuntimeError(f"API 错误: {err.get('message', str(err))[:200]}")
+            content = resp["choices"][0]["message"]["content"]
+            return content
+        except subprocess.TimeoutExpired:
+            last_err = Exception("API 调用超时 (200秒)，请尝试更简单的描述或换更快的模型")
+        except (ConnectionError, json.JSONDecodeError) as e:
+            last_err = Exception(f"网络/响应错误: {e}")
+        except RuntimeError:
+            raise  # API 错误直接抛出
+    raise last_err
 
 def parse_llm_json(content):
     """从 LLM 回复中提取命令列表"""
@@ -151,7 +155,7 @@ def parse_llm_json(content):
             return data["cmds"]
         if "blocks" in data:
             return data  # 旧格式兼容
-    except:
+    except (ValueError, TypeError):
         pass
 
     # 尝试提取第一个完整 JSON 对象
@@ -171,7 +175,7 @@ def parse_llm_json(content):
                             return data["cmds"]
                         if "blocks" in data:
                             return data
-                    except:
+                    except (ValueError, TypeError):
                         pass
                     break
 
@@ -184,7 +188,7 @@ def parse_llm_json(content):
                 return data["cmds"]
             if "blocks" in data:
                 return data
-        except:
+        except (ValueError, TypeError):
             pass
 
     # 尝试提取 ``` 块
@@ -194,7 +198,7 @@ def parse_llm_json(content):
             data = json.loads(code_block.group(1))
             if "cmds" in data:
                 return data["cmds"]
-        except:
+        except (ValueError, TypeError):
             pass
 
     # 最后尝试：找任何包含 cmds 的 JSON (用平衡括号匹配)
@@ -214,7 +218,7 @@ def parse_llm_json(content):
                             return data["cmds"]
                         if "blocks" in data:
                             return data
-                    except:
+                    except (ValueError, TypeError):
                         pass
                     break
         brace_start = content.find('{', brace_start + 1)
@@ -232,6 +236,8 @@ def parse_llm_json(content):
 
 def cmds_to_blocks(cmds):
     """将命令列表转为方块列表"""
+    # 限制命令条数，防止超长响应拖慢解析与游戏
+    cmds = cmds[:120]
     blocks = []
     for cmd in cmds:
         cmd = cmd.strip()
