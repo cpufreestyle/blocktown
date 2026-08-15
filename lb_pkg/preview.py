@@ -1,4 +1,5 @@
 """Luanti Builder - preview 模块。"""
+import math
 
 # ============================================================
 # 预览方块生成
@@ -349,7 +350,7 @@ def gen_preview_blocks(params):
             blocks.append({"x": w, "y": h, "z": z, "color": hex_color})
         for y in range(h, h+w//2+2):
             blocks.append({"x": 0, "y": y, "z": 0, "color": hex_color})
-        else:
+    else:
         # 默认: 房子
         h = 4 * s; w = 5 * s
         for x in range(-w, w+1):

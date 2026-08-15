@@ -20,17 +20,19 @@ def select_block(color, material):
 
 def gen_lua(params):
     btype = params["type"] or "house"
-    color = params["color"] or "gray"
+    color = params["color"]
     size = params["size"]
     material = params["material"]
     features = params["features"]
+    if not color and not material:
+        color = "gray"  # 无颜色无材质时才默认灰色
     sm = [0.6,1.0,1.5,2.5][size]
     block = select_block(color, material)
     builder = gen_builder(btype, block, sm, features)
 
     lua = f'''-- nl_builder mod - 自然语言生成
 -- 输入: {params["raw"]}
--- 类型: {btype}, 颜色: {color}, 尺寸: {sm}x
+-- 类型: {btype}, 颜色: {color or "-"}, 材质: {material or "-"}, 尺寸: {sm}x
 
 local B = "{block}"
 
@@ -346,7 +348,7 @@ end"""
     minetest.set_node({{x=pos.x, y=pos.y+h, z=pos.z}}, {{name='my_first_mod:brick_glow'}})
 end"""
     elif btype == "pagoda":
-        tiers = 3 + size
+        tiers = max(3, int(3*s + 1))
         tw0 = int(6*s); th = int(5*s)
         parts = []
         for t in range(tiers):
@@ -397,7 +399,7 @@ end"""
     end
     minetest.set_node({{x=pos.x, y=pos.y+h+math.ceil(w/2)+1, z=pos.z}}, {{name='my_first_mod:brick_glow'}})
 end"""
-        else:
+    else:
         h2 = int(4*s); w2 = int(5*s)
         return f"""local function build_structure(pos)
     local h = {h2} local w = {w2}
