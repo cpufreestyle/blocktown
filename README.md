@@ -43,7 +43,16 @@ python3 luanti_builder_web.py
 
 ```
 luanti_builder/
-├── luanti_builder_web.py    # 主程序 (Web GUI)
+├── luanti_builder_web.py    # 入口 (python3 luanti_builder_web.py)
+├── lb_pkg/                   # 主程序包 (Web GUI)
+│   ├── paths.py              # 平台路径检测
+│   ├── nlp.py                # 关键词解析
+│   ├── lua_gen.py            # Lua/mod 生成
+│   ├── llm.py                # AI 调用与解析
+│   ├── preview.py            # 3D 预览
+│   ├── worlds.py             # mod 安装/世界管理/启动
+│   ├── webui.py              # 前端页面
+│   └── server.py             # HTTP 服务器
 ├── luanti_builder.py         # tkinter 版本 (备用)
 ├── minetest.conf             # 游戏配置 (性能优化 + UI缩放)
 ├── my_first_mod/             # 游戏 Mod (饥饿/生物/乐高/上海)
