@@ -678,15 +678,36 @@ def parse_llm_json(content):
         except:
             pass
 
-    # 最后尝试：找任何包含 cmds 的 JSON
-    json_match = re.search(r'\{[^{}]*"cmds"[^{}]*\[.*?\][^{}]*\}', content, re.DOTALL)
-    if json_match:
-        try:
-            data = json.loads(json_match.group())
-            if "cmds" in data:
-                return data["cmds"]
-        except:
-            pass
+    # 最后尝试：找任何包含 cmds 的 JSON (用平衡括号匹配)
+    brace_start = content.find('{')
+    while brace_start >= 0:
+        depth = 0
+        for i in range(brace_start, len(content)):
+            if content[i] == '{':
+                depth += 1
+            elif content[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    json_str = content[brace_start:i+1]
+                    try:
+                        data = json.loads(json_str)
+                        if "cmds" in data:
+                            return data["cmds"]
+                        if "blocks" in data:
+                            return data
+                    except:
+                        pass
+                    break
+        brace_start = content.find('{', brace_start + 1)
+
+    # 最后最后尝试：从文本中提取 cmds 数组内容
+    cmds_match = re.search(r'"cmds"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+    if cmds_match:
+        cmds_text = cmds_match.group(1)
+        # 提取所有引号内的命令字符串
+        cmd_strings = re.findall(r'"([^"]+)"', cmds_text)
+        if cmd_strings:
+            return cmd_strings
 
     return None
 
