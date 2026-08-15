@@ -50,6 +50,11 @@ button { padding:12px 24px; font-size:15px; border:none; border-radius:8px; curs
 .ai-loading { display:none; text-align:center; padding:20px; }
 .ai-loading.show { display:block; }
 .spinner { display:inline-block; width:32px; height:32px; border:3px solid #333; border-top:3px solid #50fa7b; border-radius:50%; animation:spin 1s linear infinite; }
+.history-item { display:flex; gap:8px; align-items:center; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; border-bottom:1px solid #1a2040; transition:0.15s; }
+.history-item:hover { background:#0f3460; }
+.history-time { color:#6272a4; font-size:11px; white-space:nowrap; }
+.history-text { color:#e0e0e0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.history-count { color:#50fa7b; font-size:11px; white-space:nowrap; }
 @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
 .preview-container { position:relative; background:#0d1117; border-radius:8px; border:1px solid #333; overflow:hidden; }
 .preview-canvas { display:block; margin:0 auto; cursor:grab; }
@@ -174,8 +179,12 @@ td { color:#aaa; }
 <!-- AI 加载动画 -->
 <div class="ai-loading" id="aiLoading">
 <div class="spinner"></div>
-<p style="margin-top:10px; color:#6272a4;">🤖 AI 正在生成建筑，请稍候...</p>
+<p style="margin-top:10px; color:#6272a4;">🤖 AI 正在生成建筑，请稍候... (10-30秒)</p>
 </div>
+</div>
+<div class="card">
+<label>📜 生成历史 (点击可回看)</label>
+<div id="historyList" style="max-height:120px; overflow-y:auto;"></div>
 </div>
 <div class="card">
 <label>解析结果：</label>
@@ -365,20 +374,49 @@ function getAIUrl(action) {
 function showAILoading(show) {
     document.getElementById('aiLoading').classList.toggle('show', show);
 }
+// 生成历史 (localStorage)
+function loadHistory() {
+    const hist = JSON.parse(localStorage.getItem('lb_history') || '[]');
+    const container = document.getElementById('historyList');
+    if (!container) return;
+    container.innerHTML = '';
+    hist.slice(0, 10).forEach((item, i) => {
+        const btn = document.createElement('div');
+        btn.className = 'history-item';
+        btn.innerHTML = '<span class="history-time">' + item.time + '</span> <span class="history-text">' + item.input.substring(0,40) + '</span> <span class="history-count">' + (item.count||0) + ' blocks</span>';
+        btn.onclick = function() {
+            document.getElementById('input').value = item.input;
+            if (item.blocks) { previewBlocks = item.blocks; renderPreview(); }
+        };
+        container.appendChild(btn);
+    });
+}
+function saveHistory(input, blocks, count) {
+    const hist = JSON.parse(localStorage.getItem('lb_history') || '[]');
+    hist.unshift({time: new Date().toLocaleTimeString(), input: input, blocks: blocks, count: count});
+    if (hist.length > 20) hist.pop();
+    localStorage.setItem('lb_history', JSON.stringify(hist));
+    loadHistory();
+}
 function doAIPreview() {
     const key = document.getElementById('apiKey').value;
     if (!key) { setStatus('⚠️ 请先填写 API Key', 'status-warn'); return; }
     showAILoading(true);
-    setStatus('🤖 AI 正在生成...', 'status-warn');
+    setStatus('🤖 AI 正在生成... (通常 10-30 秒)', 'status-warn');
     fetch(getAIUrl('ai_preview')).then(r => r.json()).then(data => {
         showAILoading(false);
-        if(data.error) { setStatus(data.error, 'status-err'); if(data.raw) { document.getElementById('code').textContent = 'AI 返回内容:\\n' + data.raw; } return; }
+        if(data.error) {
+            setStatus(data.error, 'status-err');
+            if(data.raw) { document.getElementById('code').textContent = 'AI 返回内容:\\n' + data.raw; }
+            return;
+        }
         previewBlocks = data.blocks || [];
         renderPreview();
+        saveHistory(document.getElementById('input').value, previewBlocks, data.count||0);
         setStatus('✅ AI 预览已生成 (' + (data.count||0) + ' 个方块)', 'status-ok');
     }).catch(() => {
         showAILoading(false);
-        setStatus('❌ AI 请求失败', 'status-err');
+        setStatus('❌ AI 请求失败，请检查网络和 API Key', 'status-err');
     });
 }
 function doAIGenerate() {
@@ -577,6 +615,17 @@ fetch('/api?action=worlds').then(r=>r.json()).then(data => {
 });
 // 加载 AI 配置
 loadAIConfig();
+// 加载生成历史
+loadHistory();
+// 键盘快捷键: Enter 生成, Shift+Enter 换行
+document.getElementById('input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        doPreview();
+    }
+});
+// 自动聚焦输入框
+document.getElementById('input').focus();
 </script>
 </body>
 </html>'''

@@ -293,7 +293,63 @@ def gen_preview_blocks(params):
             r2 = max(2, int(5 - y * 3 / (50*s)))
             for x in range(-r2, r2+1):
                 blocks.append({"x": 38+x, "y": y, "z": 0, "color": hex_color})
-    else:
+    elif btype == "windmill":
+        h = 12 * s; w = 3 * s
+        for y in range(0, h+1, 2):
+            r = w
+            for x in range(-r, r+1, 2):
+                blocks.append({"x": x, "y": y, "z": -r, "color": hex_color})
+                blocks.append({"x": x, "y": y, "z": r, "color": hex_color})
+            for z in range(-r, r+1, 2):
+                blocks.append({"x": -r, "y": y, "z": z, "color": hex_color})
+                blocks.append({"x": r, "y": y, "z": z, "color": hex_color})
+        bh = h + w // 2
+        for d in range(-w*2, w*2+1):
+            blocks.append({"x": d, "y": bh, "z": 0, "color": hex_color})
+            blocks.append({"x": 0, "y": bh, "z": d, "color": hex_color})
+    elif btype == "pagoda":
+        tiers = 3 + size; tw0 = 6 * s; th = 5 * s
+        for t in range(tiers):
+            tw = max(2, tw0 - t * tw0 // tiers)
+            ty = t * th
+            for x in range(-tw, tw+1):
+                blocks.append({"x": x, "y": ty, "z": -tw, "color": hex_color})
+                blocks.append({"x": x, "y": ty+th, "z": -tw, "color": hex_color})
+                blocks.append({"x": x, "y": ty, "z": tw, "color": hex_color})
+                blocks.append({"x": x, "y": ty+th, "z": tw, "color": hex_color})
+            for z in range(-tw, tw+1):
+                blocks.append({"x": -tw, "y": ty, "z": z, "color": hex_color})
+                blocks.append({"x": -tw, "y": ty+th, "z": z, "color": hex_color})
+                blocks.append({"x": tw, "y": ty, "z": z, "color": hex_color})
+                blocks.append({"x": tw, "y": ty+th, "z": z, "color": hex_color})
+    elif btype == "gazebo":
+        h = 5 * s; w = 4 * s
+        for i in range(8):
+            angle = i * math.pi / 4
+            px = int(math.cos(angle) * w)
+            pz = int(math.sin(angle) * w)
+            for y in range(0, h+1):
+                blocks.append({"x": px, "y": y, "z": pz, "color": hex_color})
+        for y in range(h+1, h+h//2+2):
+            r = max(1, w - (y - h))
+            for x in range(-r, r+1, 2):
+                blocks.append({"x": x, "y": y, "z": -r, "color": COLOR_HEX["wood"]})
+                blocks.append({"x": x, "y": y, "z": r, "color": COLOR_HEX["wood"]})
+    elif btype == "skyscraper":
+        h = 30 * s; w = max(3, 5 * s)
+        for x in range(-w, w+1):
+            blocks.append({"x": x, "y": 0, "z": -w, "color": hex_color})
+            blocks.append({"x": x, "y": h, "z": -w, "color": hex_color})
+            blocks.append({"x": x, "y": 0, "z": w, "color": hex_color})
+            blocks.append({"x": x, "y": h, "z": w, "color": hex_color})
+        for z in range(-w, w+1):
+            blocks.append({"x": -w, "y": 0, "z": z, "color": hex_color})
+            blocks.append({"x": -w, "y": h, "z": z, "color": hex_color})
+            blocks.append({"x": w, "y": 0, "z": z, "color": hex_color})
+            blocks.append({"x": w, "y": h, "z": z, "color": hex_color})
+        for y in range(h, h+w//2+2):
+            blocks.append({"x": 0, "y": y, "z": 0, "color": hex_color})
+        else:
         # 默认: 房子
         h = 4 * s; w = 5 * s
         for x in range(-w, w+1):

@@ -329,7 +329,75 @@ end"""
         fill_box(pos, hx-1, 1, hz-w, hx+1, 3, hz-w, "air")
     end
 end"""
-    else:
+    elif btype == "windmill":
+        wh = int(12*s); wr = max(2, int(3*s)); bl = int(wr*2)
+        return f"""local function build_structure(pos)
+    local h = {wh} local w = {wr}
+    fill_cylinder(pos, 0, 1, 0, w, h, B)
+    for y=0, math.ceil(w/2) do
+        local r = math.max(1, w - y)
+        fill_cylinder(pos, 0, h+y+1, 0, r, 1, B)
+    end
+    local bh = h + math.ceil(w/2)
+    for d=-{bl}, {bl} do
+        minetest.set_node({{x=pos.x+d, y=pos.y+bh, z=pos.z}}, {{name=B}})
+        minetest.set_node({{x=pos.x, y=pos.y+bh, z=pos.z+d}}, {{name=B}})
+    end
+    minetest.set_node({{x=pos.x, y=pos.y+h, z=pos.z}}, {{name='my_first_mod:brick_glow'}})
+end"""
+    elif btype == "pagoda":
+        tiers = 3 + size
+        tw0 = int(6*s); th = int(5*s)
+        parts = []
+        for t in range(tiers):
+            tw = max(2, tw0 - t * (tw0 // tiers))
+            ty = t * th + 1
+            parts.append(f"fill_shell(pos, -{tw}, {ty}, -{tw}, {tw}, {ty+th}, {tw}, B)")
+            parts.append(f'fill_box(pos, -{tw}-2, {ty+th}, -{tw}-2, {tw}+2, {ty+th}, {tw}+2, "default:wood")')
+            parts.append(f"minetest.set_node({{x=pos.x, y=pos.y+{ty+th}+1, z=pos.z}}, {{name='my_first_mod:brick_glow'}})")
+        tier_code = "\\n    ".join(parts)
+        return f"""local function build_structure(pos)
+    {tier_code}
+end"""
+    elif btype == "gazebo":
+        gh = int(5*s); gw = int(4*s)
+        return f"""local function build_structure(pos)
+    local h = {gh} local w = {gw}
+    for i=0, 7 do
+        local angle = i * math.pi / 4
+        local px = math.floor(math.cos(angle) * w)
+        local pz = math.floor(math.sin(angle) * w)
+        for y=1, h do
+            minetest.set_node({{x=pos.x+px, y=pos.y+y, z=pos.z+pz}}, {{name=B}})
+        end
+    end
+    for y=0, math.ceil(h/2) do
+        local r = math.max(1, w - y)
+        fill_cylinder(pos, 0, h+y+1, 0, r, 1, "default:wood")
+    end
+    minetest.set_node({{x=pos.x, y=pos.y+h, z=pos.z}}, {{name='my_first_mod:brick_glow'}})
+end"""
+    elif btype == "skyscraper":
+        sh = int(30*s); sw = max(3, int(5*s))
+        return f"""local function build_structure(pos)
+    local h = {sh} local w = {sw}
+    fill_shell(pos, -w, 1, -w, w, h, w, B)
+    for y=2, h, 2 do
+        for x=-w, w, 2 do
+            minetest.set_node({{x=pos.x+x, y=pos.y+y, z=pos.z-w}}, {{name='default:glass'}})
+            minetest.set_node({{x=pos.x+x, y=pos.y+y, z=pos.z+w}}, {{name='default:glass'}})
+        end
+        for z=-w, w, 2 do
+            minetest.set_node({{x=pos.x-w, y=pos.y+y, z=pos.z+z}}, {{name='default:glass'}})
+            minetest.set_node({{x=pos.x+w, y=pos.y+y, z=pos.z+z}}, {{name='default:glass'}})
+        end
+    end
+    for y=h+1, h+math.ceil(w/2) do
+        minetest.set_node({{x=pos.x, y=pos.y+y, z=pos.z}}, {{name=B}})
+    end
+    minetest.set_node({{x=pos.x, y=pos.y+h+math.ceil(w/2)+1, z=pos.z}}, {{name='my_first_mod:brick_glow'}})
+end"""
+        else:
         h2 = int(4*s); w2 = int(5*s)
         return f"""local function build_structure(pos)
     local h = {h2} local w = {w2}

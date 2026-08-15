@@ -25,6 +25,9 @@ BUILDING_TYPES = {
     "螺旋":"spiral","spiral":"spiral",
     "上海":"shanghai","shanghai":"shanghai",
     "村庄":"village","village":"village",
+    "宫殿":"castle","palace":"castle","教堂":"temple","cathedral":"temple",
+    "风车":"windmill","windmill":"windmill","亭子":"gazebo","gazebo":"gazebo","凉亭":"gazebo",
+    "宝塔":"pagoda","pagoda":"pagoda","摩天大楼":"skyscraper","skyscraper":"skyscraper","高楼":"skyscraper",
 }
 
 COLOR_MAP = {
@@ -38,7 +41,7 @@ COLOR_MAP = {
     "紫色":"purple","紫":"purple","purple":"purple",
     "粉色":"pink","粉":"pink","pink":"pink",
     "青色":"cyan","青":"cyan","cyan":"cyan",
-    "灰色":"gray","灰":"gray","gray":"gray",
+    "灰色":"gray","灰":"gray","gray":"gray","银色":"gray","silver":"gray","棕色":"orange","棕":"orange","brown":"orange",
 }
 
 SIZE_MAP = {
@@ -56,7 +59,7 @@ MATERIAL_MAP = {
     "玻璃":"glass","glass":"glass",
     "金属":"iron","metal":"iron","iron":"iron",
     "泥土":"dirt","dirt":"dirt",
-    "雪":"snow","snow":"snow",
+    "雪":"snow","snow":"snow","水晶":"glass","crystal":"glass","钢铁":"iron","steel":"iron","钢":"iron","竹":"wood","竹子":"wood",
 }
 
 FEATURES_MAP = {
@@ -71,17 +74,21 @@ FEATURES_MAP = {
     "楼梯":"stairs","stair":"stairs",
 }
 
+def _match_longest(text, mapping):
+    """优先匹配最长关键词（避免"宝塔"被"塔"先匹配）"""
+    hits = [(k, v) for k, v in mapping.items() if k in text]
+    if not hits:
+        return None
+    hits.sort(key=lambda x: len(x[0]), reverse=True)
+    return hits[0][1]
+
 def parse_input(text):
     tl = text.lower()
     result = {"type":None,"color":None,"size":1,"material":None,"features":[],"raw":text}
-    for k,v in BUILDING_TYPES.items():
-        if k in tl: result["type"]=v; break
-    for k,v in COLOR_MAP.items():
-        if k in tl: result["color"]=v; break
-    for k,v in SIZE_MAP.items():
-        if k in tl: result["size"]=v; break
-    for k,v in MATERIAL_MAP.items():
-        if k in tl: result["material"]=v; break
+    result["type"] = _match_longest(tl, BUILDING_TYPES)
+    result["color"] = _match_longest(tl, COLOR_MAP)
+    result["size"] = _match_longest(tl, SIZE_MAP) or 1
+    result["material"] = _match_longest(tl, MATERIAL_MAP)
     for k,v in FEATURES_MAP.items():
         if k in tl and v not in result["features"]: result["features"].append(v)
     return result

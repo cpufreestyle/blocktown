@@ -36,33 +36,60 @@ LLM_SYSTEM_PROMPT = """你是世界顶级建筑大师，精通 voxel 建筑设�
 - taper x,y,z,r1,r2,h,type: 圆台(上细下粗)
 - fence x1,z1,x2,z2,y,type: 围栏(间隔柱)
 - cornice x1,z1,x2,z2,y,type: 屋檐(边缘突出1格)
+- roof x1,z1,x2,z2,y0,height,type: 人字形屋顶(三角截面)
+- window x,y,z,w,h,type: 窗框(空心矩形)
+- column x,y,z,h,type: 装饰柱(带柱头柱础)
+- beam x1,y1,z1,x2,z2,type: 横梁(水平条)
+- flag x,y,z,height,type: 旗杆+旗面
+- gate x,y,z,w,h,type: 大门(双开门效果)
+- balcony x,y,z,w,d,type: 阳台(带栏杆)
 
 颜色(17种):
 brick_red,brick_blue,brick_yellow,brick_green,brick_white,brick_black,brick_orange,brick_purple,brick_pink,brick_cyan,brick_gray,brick_glow,stone,wood,glass,leaves,tree
 
 配色策略:
 - 基调: brick_gray/stone (墙壁) + brick_white (边框)
-- 强调: brick_gold→brick_yellow (屋顶/装饰) + brick_cyan (窗户/细节)
+- 强调: brick_yellow (屋顶/装饰) + brick_cyan (窗户/细节)
 - 点缀: brick_glow (灯笼/灯光) brick_red (柱子/门框)
-- 屋顶: brick_orange/red + dome/cone/pyramid
+- 屋顶: brick_orange/red + dome/cone/pyramid/roof
 - 地面: brick_white/brick_cyan 交替(棋盘地板用多条floor)
 
 结构策略:
 - 每层2-3格高，颜色交替(如:层1 gray, 层2 white, 层3 gray)
-- 四角放 cyl 塔楼(高2倍)，顶部 cone + sphere(glow)
-- 屋顶用 dome 或 pyramid，比主体宽1格
-- 门窗用 arch + glass，左右对称
+- 四角放 cyl 或 column 塔楼(高2倍)，顶部 cone + sphere(glow)
+- 屋顶用 dome/pyramid/roof，比主体宽1格
+- 门窗用 arch + glass 或 window，左右对称
 - 屋檐用 cornice 包围每层
 - 地板用 2色交替的 floor
 - 围墙用 wall + fence 城垛
 - 灯光: 每个门口、塔顶、屋檐放 brick_glow
+- 用 column 替代 cyl 做更有细节的柱子
+- 用 roof 做人字形屋顶增加变化
+- 用 balcony 增加层次感
 
 坐标: x,z ∈ [-20,20], y ∈ [1,50]
-命令: 最多 80 条，追求极致细节
-只输出 JSON
+命令: 最多 120 条，追求极致细节
+关键规则:
+- 所有坐标必须是整数
+- 建筑必须关于 x 轴和 z 轴对称
+- 层高 2-3 格，屋顶比主体宽 1-2 格
+- 只输出纯 JSON，前后不要 ``` 标记或任何解释文字
 
-示例 - 精美小塔楼:
-{"cmds":["floor -6,-6,6,6,1,brick_white","floor -6,-6,6,6,1,brick_cyan","solid -3,1,-3,3,2,3,brick_gray","box -3,3,-3,3,5,3,brick_white","cornice -4,-4,4,4,5,brick_orange","solid -3,6,-3,3,6,3,brick_gray","box -3,7,-3,3,8,3,brick_white","arch 0,1,-3,2,3,glass","arch 0,1,3,2,3,glass","cyl -3,1,-3,1,8,brick_red","cyl 3,1,3,1,8,brick_red","cyl -3,1,-3,1,8,brick_red","cyl 3,1,-3,1,8,brick_red","cone -3,9,-3,2,4,brick_yellow","cone 3,9,3,2,4,brick_yellow","cone -3,9,-3,2,4,brick_yellow","cone 3,9,-3,2,4,brick_yellow","dome 0,9,0,4,brick_orange","sphere 0,13,0,2,brick_glow","sphere -3,13,-3,1,brick_glow","sphere 3,13,3,1,brick_glow","sphere -3,13,3,1,brick_glow","sphere 3,13,-3,1,brick_glow","vline 0,6,8,0,brick_glow","vline 0,3,5,3,brick_glow","vline 0,3,5,-3,brick_glow","ring 0,14,0,5,1,brick_pink","fence -6,-6,6,-6,1,brick_gray","fence -6,6,6,6,1,brick_gray","fence -6,-6,-6,6,1,brick_gray","fence 6,-6,6,6,1,brick_gray"]}"""
+示例 - 精美宫殿:
+{"cmds":["floor -8,-8,8,8,1,brick_white","floor -8,-8,8,8,1,brick_cyan","solid -5,1,-5,5,3,5,brick_gray","box -5,4,-5,5,7,5,brick_white","cornice -6,-6,6,6,7,brick_orange","solid -5,8,-5,5,8,5,brick_gray","box -5,9,-5,5,11,5,brick_white","roof -6,-6,6,6,12,4,brick_red","column -5,1,-5,9,brick_red","column 5,1,5,9,brick_red","column -5,1,5,9,brick_red","column 5,1,-5,9,brick_red","arch 0,1,-5,3,4,glass","arch 0,1,5,3,4,glass","window -3,4,-5,2,3,glass","window 3,4,-5,2,3,glass","window -3,4,5,2,3,glass","window 3,4,5,2,3,glass","balcony 0,8,5,4,2,brick_white","dome 0,12,0,5,brick_orange","sphere 0,17,0,2,brick_glow","cone -5,12,-5,2,4,brick_yellow","cone 5,12,5,2,4,brick_yellow","cone -5,12,5,2,4,brick_yellow","cone 5,12,-5,2,4,brick_yellow","flag 0,17,0,3,brick_glow","vline 0,4,8,0,brick_glow","beam -5,8,-5,5,brick_yellow","beam -5,8,5,5,brick_yellow","ring 0,18,0,6,1,brick_pink","fence -8,-8,8,-8,1,brick_gray","fence -8,8,8,8,1,brick_gray","fence -8,-8,-8,8,1,brick_gray","fence 8,-8,8,8,1,brick_gray"]}"""
+
+# 简单缓存: 相同输入+模型不重复调用
+_LLM_CACHE = {}
+def _cache_key(api_key, base_url, model, user_input):
+    return f"{api_key[:8]}|{model}|{user_input}"
+
+def get_cached(key):
+    return _LLM_CACHE.get(key)
+
+def set_cached(key, value):
+    if len(_LLM_CACHE) > 20:
+        _LLM_CACHE.clear()
+    _LLM_CACHE[key] = value
 
 BLOCK_TYPE_TO_LUA = {
     "brick_red": "my_first_mod:brick_red",
@@ -99,6 +126,11 @@ BLOCK_TYPE_TO_COLOR = {
 
 def call_llm(api_key, base_url, model, user_input):
     """调用 LLM API 生成建筑方块列表 (使用 subprocess curl 避免超时)"""
+    # 缓存检查
+    ck = _cache_key(api_key, base_url, model, user_input)
+    cached = get_cached(ck)
+    if cached:
+        return cached
     import subprocess
     url = base_url.rstrip("/") + "/chat/completions"
     payload = {
@@ -134,6 +166,7 @@ def call_llm(api_key, base_url, model, user_input):
                 err = resp["error"]
                 raise RuntimeError(f"API 错误: {err.get('message', str(err))[:200]}")
             content = resp["choices"][0]["message"]["content"]
+            set_cached(ck, content)
             return content
         except subprocess.TimeoutExpired:
             last_err = Exception("API 调用超时 (200秒)，请尝试更简单的描述或换更快的模型")
@@ -432,6 +465,88 @@ def cmds_to_blocks(cmds):
                     blocks.append({"x":x2+1,"y":max(1,y),"z":z,"type":btype})
                     blocks.append({"x":x1-1,"y":max(1,y+1),"z":z,"type":btype})
                     blocks.append({"x":x2+1,"y":max(1,y+1),"z":z,"type":btype})
+            elif cmd_type == "roof":
+                # 人字形屋顶: x1,z1,x2,z2,y0,height,type
+                x1,z1,x2,z2,y0,h = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]),int(coords[4]),int(coords[5])
+                half_w = (max(x1,x2) - min(x1,x2)) // 2
+                mid_x = (x1 + x2) // 2
+                for y in range(h):
+                    offset = int(y * half_w / max(h, 1))
+                    lx = mid_x - offset
+                    rx = mid_x + offset
+                    for z in range(min(z1,z2), max(z1,z2)+1):
+                        blocks.append({"x":lx,"y":max(1,y0+y),"z":z,"type":btype})
+                        if lx != rx:
+                            blocks.append({"x":rx,"y":max(1,y0+y),"z":z,"type":btype})
+                        # 填充屋顶中间
+                        for xx in range(lx+1, rx):
+                            blocks.append({"x":xx,"y":max(1,y0+y),"z":z,"type":btype})
+            elif cmd_type == "window":
+                # 窗框: x,y,z,w,h,type (空心矩形)
+                wx,wy,wz,w,h = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]),int(coords[4])
+                for dx in range(-w, w+1):
+                    blocks.append({"x":wx+dx,"y":max(1,wy),"z":wz,"type":btype})
+                    blocks.append({"x":wx+dx,"y":max(1,wy+h),"z":wz,"type":btype})
+                for dy in range(0, h+1):
+                    blocks.append({"x":wx-w,"y":max(1,wy+dy),"z":wz,"type":btype})
+                    blocks.append({"x":wx+w,"y":max(1,wy+dy),"z":wz,"type":btype})
+            elif cmd_type == "column":
+                # 装饰柱(带柱头柱础): x,y,z,h,type
+                cx,cy,cz,h = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3])
+                for y in range(h):
+                    blocks.append({"x":cx,"y":max(1,cy+y),"z":cz,"type":btype})
+                # 柱头(宽2格十字)
+                blocks.append({"x":cx+1,"y":max(1,cy),"z":cz,"type":btype})
+                blocks.append({"x":cx-1,"y":max(1,cy),"z":cz,"type":btype})
+                blocks.append({"x":cx,"y":max(1,cy),"z":cz+1,"type":btype})
+                blocks.append({"x":cx,"y":max(1,cy),"z":cz-1,"type":btype})
+                blocks.append({"x":cx+1,"y":max(1,cy+h-1),"z":cz,"type":btype})
+                blocks.append({"x":cx-1,"y":max(1,cy+h-1),"z":cz,"type":btype})
+                blocks.append({"x":cx,"y":max(1,cy+h-1),"z":cz+1,"type":btype})
+                blocks.append({"x":cx,"y":max(1,cy+h-1),"z":cz-1,"type":btype})
+            elif cmd_type == "beam":
+                # 横梁: x1,y1,z1,x2,z2,type
+                x1,y1,z1,x2,z2 = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]),int(coords[4])
+                for z in range(min(z1,z2), max(z1,z2)+1):
+                    blocks.append({"x":x1,"y":max(1,y1),"z":z,"type":btype})
+                    if x1 != x2:
+                        blocks.append({"x":x2,"y":max(1,y1),"z":z,"type":btype})
+            elif cmd_type == "flag":
+                # 旗杆+旗面: x,y,z,height,type
+                fx,fy,fz,h = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3])
+                for y in range(h):
+                    blocks.append({"x":fx,"y":max(1,fy+y),"z":fz,"type":"wood"})
+                # 旗面(旗杆顶部向一侧延伸)
+                for dx in range(1, 4):
+                    blocks.append({"x":fx+dx,"y":max(1,fy+h-1),"z":fz,"type":btype})
+                    blocks.append({"x":fx+dx,"y":max(1,fy+h-2),"z":fz,"type":btype})
+            elif cmd_type == "gate":
+                # 大门: x,y,z,w,h,type (双开门效果)
+                gx,gy,gz,w,h = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]),int(coords[4])
+                # 门框
+                for dx in range(-w-1, w+2):
+                    blocks.append({"x":gx+dx,"y":max(1,gy),"z":gz,"type":btype})
+                    blocks.append({"x":gx+dx,"y":max(1,gy+h),"z":gz,"type":btype})
+                for dy in range(0, h+1):
+                    blocks.append({"x":gx-w-1,"y":max(1,gy+dy),"z":gz,"type":btype})
+                    blocks.append({"x":gx+w+1,"y":max(1,gy+dy),"z":gz,"type":btype})
+                # 中线分隔
+                for dy in range(1, h):
+                    blocks.append({"x":gx,"y":max(1,gy+dy),"z":gz,"type":btype})
+            elif cmd_type == "balcony":
+                # 阳台: x,y,z,w,d,type
+                bx,by,bz,w,d = int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]),int(coords[4])
+                # 地板
+                for dx in range(-w, w+1):
+                    for dz in range(0, d+1):
+                        blocks.append({"x":bx+dx,"y":max(1,by),"z":bz+dz,"type":btype})
+                # 栏杆
+                for dx in range(-w, w+1, 2):
+                    blocks.append({"x":bx+dx,"y":max(1,by+1),"z":bz+d,"type":btype})
+                    blocks.append({"x":bx+dx,"y":max(1,by+2),"z":bz+d,"type":btype})
+                for dz in range(0, d+1, 2):
+                    blocks.append({"x":bx-w,"y":max(1,by+1),"z":bz+cz,"type":btype})
+                    blocks.append({"x":bx+w,"y":max(1,by+1),"z":bz+cz,"type":btype})
         except (ValueError, IndexError):
             continue
     # 限制总数
