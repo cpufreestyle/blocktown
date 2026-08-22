@@ -9,7 +9,7 @@ from urllib.parse import parse_qs
 from .paths import get_minetest_dir
 from .nlp import parse_input
 from .lua_gen import gen_lua
-from .llm import BLOCK_TYPE_TO_COLOR, blocks_to_lua, call_llm, cmds_to_blocks, parse_llm_json
+from .llm import BLOCK_TYPE_TO_COLOR, blocks_to_lua, call_llm, call_llm_chat, cmds_to_blocks, parse_llm_json
 from .preview import gen_preview_blocks
 from .worlds import enable_mod_in_world, install_mod, launch_luanti, list_worlds
 from .webui import HTML_PAGE
@@ -172,6 +172,54 @@ class Handler(BaseHTTPRequestHandler):
                         "world_path": world_path,
                         "launch": launch_result,
                     })
+                except Exception as e:
+                    self._send_json({"error": str(e)})
+            elif action == 'ai_chat':
+                # 对话式迭代建造: 基于历史与当前建筑增量修改
+                api_key = qs.get('api_key', [''])[0]
+                base_url = qs.get('base_url', ['https://api.deepseek.com/v1'])[0]
+                model = qs.get('model', ['deepseek-chat'])[0]
+                do_install = qs.get('install', [''])[0] == '1'
+                world_name = qs.get('world', [''])[0]
+                if not api_key:
+                    self._send_json({"error": "请先设置 API Key"})
+                    return
+                history = []
+                current_cmds = None
+                try:
+                    history = json.loads(qs.get('history', ['[]'])[0] or '[]')
+                    current_cmds = json.loads(qs.get('cmds', [''])[0] or 'null')
+                except (ValueError, TypeError):
+                    pass
+                if not isinstance(history, list):
+                    history = []
+                try:
+                    content = call_llm_chat(api_key, base_url, model, user_input,
+                                            history=history, current_cmds=current_cmds)
+                    cmds = parse_llm_json(content)
+                    if not cmds:
+                        self._send_json({"error": "AI 返回格式错误", "raw": content[:500]})
+                        return
+                    new_cmds = cmds if isinstance(cmds, list) else cmds.get("cmds", [])
+                    blocks = cmds_to_blocks(new_cmds)
+                    if not blocks:
+                        self._send_json({"error": "AI 生成的命令无法转为方块"})
+                        return
+                    lua, valid_blocks = blocks_to_lua(blocks, user_input)
+                    resp = {"lua": lua, "cmds": new_cmds,
+                            "blocks": [{"x": b["x"], "y": b["y"], "z": b["z"],
+                                        "color": BLOCK_TYPE_TO_COLOR.get(b.get("type", "stone"), "#7f8c8d")}
+                                       for b in valid_blocks],
+                            "count": len(valid_blocks)}
+                    if do_install:
+                        mod_path = install_mod(lua)
+                        mt_dir = get_minetest_dir()
+                        world_dir = str(mt_dir / "worlds" / world_name) if world_name else None
+                        world_path = enable_mod_in_world(world_dir)
+                        resp.update({"mod_path": mod_path, "world_path": world_path,
+                                     "launch": launch_luanti(world_path),
+                                     "message": "已安装mod并启动游戏，进入后输入 /build 生成建筑"})
+                    self._send_json(resp)
                 except Exception as e:
                     self._send_json({"error": str(e)})
             else:

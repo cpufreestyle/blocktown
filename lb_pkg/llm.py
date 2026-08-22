@@ -176,6 +176,69 @@ def call_llm(api_key, base_url, model, user_input):
             raise  # API 错误直接抛出
     raise last_err
 
+CHAT_ITERATE_RULES = """
+
+迭代修改模式:
+- 用户消息是对当前建筑的修改要求 (如"把屋顶改成金色"、"再加两层塔楼")
+- 你必须在当前建筑基础上增量修改，保留未被要求改动的部分
+- 输出修改后的完整 cmds 列表 (不是只输出差异)
+- 同样只输出纯 JSON"""
+
+MAX_HISTORY_TURNS = 8
+
+def call_llm_chat(api_key, base_url, model, user_input, history=None, current_cmds=None):
+    """对话式迭代建造: 基于历史对话与当前建筑 cmds 增量修改"""
+    import subprocess
+    messages = [{"role": "system", "content": LLM_SYSTEM_PROMPT + CHAT_ITERATE_RULES}]
+    if current_cmds:
+        cmds_preview = json.dumps(list(current_cmds)[:120], ensure_ascii=False)
+        messages.append({"role": "system", "content": f"当前建筑的完整 cmds 列表:\n{{\"cmds\":{cmds_preview}}}"})
+    if history:
+        for h in history[-MAX_HISTORY_TURNS*2:]:
+            role = h.get("role", "user")
+            if role in ("user", "assistant") and h.get("content"):
+                messages.append({"role": role, "content": str(h["content"])[:1000]})
+    messages.append({"role": "user", "content": user_input})
+
+    hist_key = json.dumps(messages, ensure_ascii=False, sort_keys=True)
+    ck = _cache_key(api_key, base_url, model, hist_key[:500])
+    cached = get_cached(ck)
+    if cached:
+        return cached
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = {"model": model, "messages": messages,
+               "temperature": 0.7, "max_tokens": 4096, "stream": False}
+    payload_str = json.dumps(payload, ensure_ascii=False)
+    curl_cmd = [
+        "curl", "-s", "-X", "POST", url,
+        "-H", "Content-Type: application/json",
+        "-H", f"Authorization: Bearer {api_key}",
+        "-d", payload_str,
+        "--connect-timeout", "10",
+        "--max-time", "180",
+    ]
+    last_err = None
+    for attempt in range(2):
+        try:
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=200)
+            if result.returncode != 0:
+                raise ConnectionError(f"curl 错误: {result.stderr[:200]}")
+            resp = json.loads(result.stdout)
+            if "error" in resp:
+                err = resp["error"]
+                raise RuntimeError(f"API 错误: {err.get('message', str(err))[:200]}")
+            content = resp["choices"][0]["message"]["content"]
+            set_cached(ck, content)
+            return content
+        except subprocess.TimeoutExpired:
+            last_err = Exception("API 调用超时 (200秒)，请尝试更简单的描述或换更快的模型")
+        except (ConnectionError, json.JSONDecodeError) as e:
+            last_err = Exception(f"网络/响应错误: {e}")
+        except RuntimeError:
+            raise
+    raise last_err
+
 def parse_llm_json(content):
     """从 LLM 回复中提取命令列表"""
     # 去除前后空白

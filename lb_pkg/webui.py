@@ -84,6 +84,10 @@ td { color:#aaa; }
 <div class="card">
 <label>描述你想要的建筑：</label>
 <input type="text" id="input" value="建一个红色的城堡，有塔楼" placeholder="例如：建造一座大型金字塔">
+<div style="display:flex; gap:6px; margin-top:6px; align-items:center;">
+<button id="micBtn" onclick="toggleVoice('input', function(){ doParse(); doPreview(); })" style="padding:6px 12px; background:#1a1a2e; color:#e0e0e0; border:1px solid #0f3460; border-radius:6px; font-size:14px; cursor:pointer;">🎤 语音输入</button>
+<span id="micStatus" style="font-size:12px; color:#6272a4;">点击开始说话 (浏览器语音识别)</span>
+</div>
 <div class="examples">
 <span style="color:#666;font-size:12px">示例：</span>
 <span class="example-btn" onclick="setInput(this.textContent)">建一个红色的城堡，有塔楼</span>
@@ -174,6 +178,21 @@ td { color:#aaa; }
 </div>
 </div>
 <p style="font-size:12px; color:#6272a4; margin-top:6px;">API Key 保存在浏览器本地，不会上传。</p>
+</div>
+
+<!-- 对话式迭代建造 -->
+<div class="card" style="border:1px solid #0f3460;">
+<label>💬 对话式迭代建造 (基于上一版增量修改，如"把屋顶改成金色""再加两层塔楼")</label>
+<div id="chatBox" style="max-height:200px; overflow-y:auto; background:#0d1117; border:1px solid #333; border-radius:8px; padding:8px; margin-bottom:8px; font-size:13px;">
+<div style="color:#6272a4;">开始新对话：描述一个建筑，AI 生成后可继续提修改要求。</div>
+</div>
+<div style="display:flex; gap:6px;">
+<input type="text" id="chatInput" placeholder="例如：把屋顶改成金色" onkeydown="if(event.key==='Enter')sendChat(false)" style="flex:1; padding:8px; background:#1a1a2e; color:#e0e0e0; border:1px solid #0f3460; border-radius:6px; font-size:14px;">
+<button id="chatMicBtn" onclick="toggleVoice('chatInput', function(){ sendChat(false); })" style="padding:6px 10px; background:#1a1a2e; color:#e0e0e0; border:1px solid #0f3460; border-radius:6px; cursor:pointer;">🎤</button>
+<button class="btn-ai" onclick="sendChat(false)">💬 发送</button>
+<button class="btn-ai-all" onclick="sendChat(true)">🚀 修改并加入</button>
+<button onclick="resetChat()" style="padding:8px; background:#1a1a2e; color:#6272a4; border:1px solid #0f3460; border-radius:6px; cursor:pointer;">🔄 重新开始</button>
+</div>
 </div>
 
 <!-- AI 加载动画 -->
@@ -443,6 +462,132 @@ function doAIGenerate() {
     });
 }
 
+// ===== 对话式迭代建造 =====
+let chatHistory = [];   // [{role, content}]
+let chatCmds = null;    // 当前建筑的 cmds 列表
+
+function loadChatState() {
+    try {
+        chatHistory = JSON.parse(localStorage.getItem('lb_chat_history') || '[]');
+        chatCmds = JSON.parse(localStorage.getItem('lb_chat_cmds') || 'null');
+    } catch (e) { chatHistory = []; chatCmds = null; }
+    chatHistory.forEach(m => appendChatBubble(m.role, m.content));
+}
+function saveChatState() {
+    localStorage.setItem('lb_chat_history', JSON.stringify(chatHistory));
+    localStorage.setItem('lb_chat_cmds', JSON.stringify(chatCmds));
+}
+function appendChatBubble(role, text) {
+    const box = document.getElementById('chatBox');
+    const div = document.createElement('div');
+    div.style.marginBottom = '6px';
+    div.style.padding = '6px 8px';
+    div.style.borderRadius = '6px';
+    if (role === 'user') {
+        div.style.background = '#0f3460'; div.style.color = '#e0e0e0';
+        div.style.marginLeft = '40px'; div.style.textAlign = 'right';
+    } else {
+        div.style.background = '#1a1a2e'; div.style.color = '#50fa7b';
+        div.style.marginRight = '40px';
+    }
+    div.textContent = text;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+function resetChat() {
+    chatHistory = []; chatCmds = null;
+    localStorage.removeItem('lb_chat_history');
+    localStorage.removeItem('lb_chat_cmds');
+    document.getElementById('chatBox').innerHTML = '<div style="color:#6272a4;">已清空。描述一个新建筑开始吧。</div>';
+}
+function sendChat(withInstall) {
+    const key = document.getElementById('apiKey').value;
+    if (!key) { setStatus('⚠️ 请先填写 API Key', 'status-warn'); return; }
+    const inputEl = document.getElementById('chatInput');
+    const msg = inputEl.value.trim();
+    if (!msg) return;
+    inputEl.value = '';
+    appendChatBubble('user', msg);
+    chatHistory.push({role: 'user', content: msg});
+    showAILoading(true);
+    setStatus('🤖 AI 正在' + (chatCmds ? '修改建筑' : '生成建筑') + '...', 'status-warn');
+    const url = '/api?action=ai_chat' +
+        '&input=' + encodeURIComponent(msg) +
+        '&api_key=' + encodeURIComponent(key) +
+        '&base_url=' + encodeURIComponent(document.getElementById('baseUrl').value) +
+        '&model=' + encodeURIComponent(document.getElementById('modelName').value) +
+        '&history=' + encodeURIComponent(JSON.stringify(chatHistory.slice(0, -1))) +
+        '&cmds=' + encodeURIComponent(JSON.stringify(chatCmds || [])) +
+        (withInstall ? '&install=1' : '');
+    const worldEl = document.getElementById('worldSelect');
+    if (worldEl && worldEl.value) url += '&world=' + encodeURIComponent(worldEl.value);
+    fetch(url).then(r => r.json()).then(data => {
+        showAILoading(false);
+        if (data.error) {
+            appendChatBubble('assistant', '❌ ' + data.error);
+            chatHistory.push({role: 'assistant', content: data.error});
+            setStatus(data.error, 'status-err');
+            return;
+        }
+        const reply = '✅ 已生成 ' + (data.count || 0) + ' 方块的建筑' + (withInstall ? ' 并安装启动' : '');
+        appendChatBubble('assistant', reply);
+        chatHistory.push({role: 'assistant', content: reply});
+        chatCmds = data.cmds || null;
+        saveChatState();
+        previewBlocks = data.blocks || [];
+        renderPreview();
+        if (data.lua) document.getElementById('code').textContent = data.lua;
+        if (withInstall) {
+            document.getElementById('pathInfo').textContent = 'Mod: ' + (data.mod_path || '');
+            setStatus('✅ 修改已安装！进入游戏输入 /build', 'status-ok');
+        } else {
+            setStatus('✅ 对话式生成完成 (' + (data.count || 0) + ' 方块)，可继续提修改要求', 'status-ok');
+        }
+    }).catch(() => {
+        showAILoading(false);
+        appendChatBubble('assistant', '❌ 请求失败，请检查网络');
+        setStatus('❌ AI 请求失败', 'status-err');
+    });
+}
+
+// ===== 语音输入 (Web Speech API) =====
+let voiceRec = null;
+let voiceTarget = null;   // {inputId, callback}
+function toggleVoice(inputId, callback) {
+    if (voiceRec) { voiceRec.stop(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const statusEl = document.getElementById('micStatus');
+    if (!SR) {
+        if (statusEl) statusEl.textContent = '当前浏览器不支持语音识别 (建议 Chrome/Edge/Safari)';
+        setStatus('⚠️ 浏览器不支持语音识别', 'status-warn');
+        return;
+    }
+    voiceRec = new SR();
+    voiceRec.lang = 'zh-CN';
+    voiceRec.interimResults = false;
+    voiceRec.maxAlternatives = 1;
+    voiceTarget = {inputId: inputId, callback: callback};
+    document.getElementById('micBtn').textContent = '🔴 听着呢...再说一句点击结束';
+    if (inputId === 'chatInput') document.getElementById('chatMicBtn').textContent = '🔴';
+    if (statusEl) statusEl.textContent = '请说话...';
+    voiceRec.onresult = function(e) {
+        const text = e.results[0][0].transcript;
+        document.getElementById(voiceTarget.inputId).value = text;
+        if (statusEl) statusEl.textContent = '识别: ' + text;
+        if (voiceTarget.callback) voiceTarget.callback();
+    };
+    voiceRec.onerror = function(e) {
+        if (statusEl) statusEl.textContent = '语音识别失败: ' + e.error;
+    };
+    voiceRec.onend = function() {
+        voiceRec = null;
+        document.getElementById('micBtn').textContent = '🎤 语音输入';
+        document.getElementById('chatMicBtn').textContent = '🎤';
+        if (statusEl && statusEl.textContent.indexOf('识别:') !== 0) statusEl.textContent = '点击开始说话 (浏览器语音识别)';
+    };
+    voiceRec.start();
+}
+
 // ===== 3D 预览 =====
 let previewBlocks = [];
 let previewState = { angleX: -0.5, angleY: 0.5, zoom: 1.0, dragging: false, lastX: 0, lastY: 0 };
@@ -617,6 +762,8 @@ fetch('/api?action=worlds').then(r=>r.json()).then(data => {
 loadAIConfig();
 // 加载生成历史
 loadHistory();
+// 恢复对话式建造上下文
+loadChatState();
 // 键盘快捷键: Enter 生成, Shift+Enter 换行
 document.getElementById('input').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
