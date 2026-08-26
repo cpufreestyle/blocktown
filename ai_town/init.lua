@@ -721,13 +721,18 @@ minetest.register_chatcommand("town", {
         -- 路灯
         lamp(-4,-8); lamp(4,-8); lamp(-4,0); lamp(4,0); lamp(-4,8); lamp(4,8); lamp(-8,0); lamp(8,0)
 
-        -- 生成 NPC
+        -- 生成 NPC (在广场附近, 玩家能直接接触到)
+        local spawn_offsets = {
+            baker={x=-4,z=-4}, scholar={x=4,z=-4}, merchant={x=4,z=4},
+            guard={x=-4,z=4}, healer={x=0,z=-6}, fisher={x=0,z=6},
+        }
         for _, nd in ipairs(NPC_TYPES) do
             for _, obj in ipairs(minetest.get_objects_inside_radius(pos, 60)) do
                 local ent = obj:get_luaentity()
                 if ent and ent.name == "ai_town:npc_" .. nd.name then obj:remove() end
             end
-            local sp = {x=pos.x+nd.work_pos.x, y=pos.y+nd.work_pos.y, z=pos.z+nd.work_pos.z}
+            local off = spawn_offsets[nd.name] or {x=0,z=0}
+            local sp = {x=pos.x+off.x, y=pos.y+1, z=pos.z+off.z}
             local obj = minetest.add_entity(sp, "ai_town:npc_" .. nd.name)
             if obj then
                 obj:get_luaentity()._npc_def = {
