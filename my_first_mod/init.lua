@@ -802,8 +802,8 @@ minetest.register_abm({
 -- ============================================================
 
 minetest.register_on_joinplayer(function(player)
-    -- 无敌模式：飞行 + 无伤 + 高速 + 超级跳
-    player:set_physics_override({jump = 3.0, speed = 2.0, gravity = 0.5, sneak = false})
+    -- 无敌模式：飞行 + 无伤 + 能跳上台阶
+    player:set_physics_override({jump = 3.0, speed = 1.5, gravity = 1.0, sneak = false})
     local name = player:get_player_name()
     local privs = minetest.get_player_privs(name)
     privs.fly = true

@@ -58,6 +58,7 @@ local npc_relation = {}
 local npc_memories = {}
 local npc_reflections = {}
 local npc_talk_count = {}
+local npc_plans = {}          -- 每日计划 (参照论文 Planning 模块)
 local active_dialog = {}
 local town_center = nil
 local player_coins = {}
@@ -66,32 +67,61 @@ local weather_timer = 0
 local npc_chat_timer = 0
 
 -- ============================================================
--- 记忆系统
+-- 记忆系统 (参照 Generative Agents 论文: recency + importance + relevance)
 -- ============================================================
 local function add_memory(npc_name, text, importance)
     if not npc_memories[npc_name] then npc_memories[npc_name] = {} end
-    table.insert(npc_memories[npc_name], {time=minetest.get_timeofday(), text=text, importance=importance or 3})
+    table.insert(npc_memories[npc_name], {
+        time = minetest.get_timeofday(),
+        access_time = minetest.get_timeofday(),  -- 最后访问时间 (recency)
+        text = text,
+        importance = importance or 3,  -- 1-10 重要度
+    })
     while #npc_memories[npc_name] > AI_CONFIG.max_memories do table.remove(npc_memories[npc_name], 1) end
 end
 
+-- 检索函数 (recency * 0.3 + importance * 0.4 + relevance * 0.3)
 local function get_memory_context(npc_name, query)
     local mems = npc_memories[npc_name] or {}
     if #mems == 0 then return "" end
+    local now = minetest.get_timeofday()
     local scored = {}
     for _, m in ipairs(mems) do
-        local score = m.importance
+        -- Recency: 指数衰减 (最近访问的记忆得分更高)
+        local time_diff = math.abs(now - (m.access_time or m.time))
+        if time_diff > 0.5 then time_diff = 1 - time_diff end  -- 处理昼夜循环
+        local recency = math.exp(-time_diff * 5)  -- 指数衰减
+        -- Importance: 直接使用存储的重要度 (1-10 → 0-1)
+        local importance = m.importance / 10
+        -- Relevance: 关键词匹配度
+        local relevance = 0
+        local word_count = 0
         for word in query:gmatch("%S+") do
-            if #word > 1 and m.text:lower():find(word:lower()) then score = score + 2 end
+            word_count = word_count + 1
+            if #word > 1 and m.text:lower():find(word:lower()) then
+                relevance = relevance + 1
+            end
         end
-        table.insert(scored, {mem=m, score=score})
+        relevance = word_count > 0 and (relevance / word_count) or 0
+        -- 加权总分
+        local score = recency * 0.3 + importance * 0.4 + relevance * 0.3
+        table.insert(scored, {mem = m, score = score})
     end
-    table.sort(scored, function(a,b) return a.score > b.score end)
+    table.sort(scored, function(a, b) return a.score > b.score end)
+    -- 取 Top-3 记忆
     local result = {}
-    for i=1,math.min(3,#scored) do table.insert(result, scored[i].mem.text) end
+    for i = 1, math.min(3, #scored) do
+        table.insert(result, scored[i].mem.text)
+        scored[i].mem.access_time = now  -- 更新访问时间
+    end
     local ctx = ""
-    if #result > 0 then ctx = "你最近的记忆: " .. table.concat(result, "; ") .. "\n" end
+    if #result > 0 then ctx = "你最近的记忆:\n- " .. table.concat(result, "\n- ") .. "\n" end
+    -- 反思总结
     local ref = npc_reflections[npc_name]
-    if ref then ctx = ctx .. "你的总结: " .. ref .. "\n" end
+    if ref then ctx = ctx .. "你的自我认知: " .. ref .. "\n" end
+    -- 当前计划
+    local plan = npc_plans[npc_name]
+    if plan then ctx = ctx .. "你今天的计划: " .. plan .. "\n" end
     return ctx
 end
 
@@ -125,6 +155,42 @@ local function trigger_reflection(npc_name)
 end
 
 -- ============================================================
+-- 每日计划生成 (参照论文 Planning 模块)
+-- ============================================================
+local function generate_daily_plan(npc_name)
+    local nd = nil
+    for _, def in ipairs(NPC_TYPES) do if def.name == npc_name then nd = def break end end
+    if not nd or not HTTP_API then return end
+    local mem_ctx = get_memory_context(npc_name, "今天的计划")
+    local time = minetest.get_timeofday()
+    local time_str = time < 0.25 and "凌晨" or (time < 0.5 and "上午" or (time < 0.75 and "下午" or "夜晚"))
+    local prompt = "你今天" .. time_str .. "想做什么？列出3个活动(每个10字内)用逗号分隔。"
+    local payload = minetest.write_json({
+        model = AI_CONFIG.model,
+        messages = {
+            {role="system", content=nd.system_prompt .. "\n" .. mem_ctx .. "天气:" .. weather},
+            {role="user", content=prompt},
+        },
+        temperature=0.6, max_tokens=150,
+    })
+    HTTP_API:fetch({
+        url = AI_CONFIG.base_url, method="POST", data=payload,
+        extra_headers={"Content-Type: application/json", "Authorization: Bearer " .. AI_CONFIG.api_key},
+        timeout=30,
+    }, function(result)
+        if result.code == 200 then
+            local data = minetest.parse_json(result.data)
+            if data and data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content then
+                local plan = data.choices[1].message.content
+                npc_plans[npc_name] = plan
+                add_memory(npc_name, "我今天的计划: " .. plan, 4)
+                minetest.log("action", "[ai_town] " .. nd.display .. " 计划: " .. plan)
+            end
+        end
+    end)
+end
+
+-- ============================================================
 -- AI 对话 (异步回调)
 -- ============================================================
 local function call_ai(pname, system_prompt, history, user_message, mood, relation, mem_ctx, callback)
@@ -139,21 +205,23 @@ local function call_ai(pname, system_prompt, history, user_message, mood, relati
 
     local payload = minetest.write_json({model=AI_CONFIG.model, messages=messages, temperature=0.8, max_tokens=500})
     if not HTTP_API then
-        minetest.after(0, function() if type(callback)=="function" then callback(nil, "HTTP API 不可用") end end)
+        local cb = callback
+        minetest.after(0, function() if type(cb)=="function" then cb(nil, "HTTP API 不可用") end end)
         return
     end
+    local cb = callback
     HTTP_API:fetch({
         url = AI_CONFIG.base_url, method="POST", data=payload,
         extra_headers={"Content-Type: application/json", "Authorization: Bearer " .. AI_CONFIG.api_key},
         timeout=30,
     }, function(result)
-        if type(callback) ~= "function" then return end
+        if type(cb) ~= "function" then return end
         if result.code == 200 then
             local data = minetest.parse_json(result.data)
             if data and data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content then
-                callback(data.choices[1].message.content, nil)
-            else callback(nil, "AI返回格式错误") end
-        else callback(nil, "HTTP " .. result.code) end
+                cb(data.choices[1].message.content, nil)
+            else cb(nil, "AI返回格式错误") end
+        else cb(nil, "HTTP " .. result.code) end
     end)
 end
 
@@ -520,9 +588,11 @@ minetest.register_on_chat_message(function(name, message)
 end)
 
 -- ============================================================
--- 天气 + NPC间对话 (全局步进)
+-- 天气 + NPC间对话 + 每日计划 (全局步进)
 -- ============================================================
+local last_day = -1
 minetest.register_globalstep(function(dtime)
+    -- 天气变化
     weather_timer = weather_timer + dtime
     if weather_timer > 120 then
         weather_timer = 0
@@ -532,8 +602,16 @@ minetest.register_globalstep(function(dtime)
             local msg = weather == "rain" and "🌧️ 下雨了" or (weather == "fog" and "🌫️ 起雾了" or "☀️ 天晴了")
             minetest.chat_send_player(p:get_player_name(), "§e" .. msg)
         end
+        -- 下雨影响NPC情绪
+        if weather == "rain" then
+            for _, nd in ipairs(NPC_TYPES) do
+                npc_mood[nd.name] = math.max(10, (npc_mood[nd.name] or 50) - 5)
+                add_memory(nd.name, "下雨了，心情不太好", 2)
+            end
+        end
     end
 
+    -- NPC间定时对话
     npc_chat_timer = npc_chat_timer + dtime
     if npc_chat_timer > 45 then
         npc_chat_timer = 0
@@ -541,6 +619,17 @@ minetest.register_globalstep(function(dtime)
             local n1 = NPC_TYPES[math.random(#NPC_TYPES)].name
             local n2 = NPC_TYPES[math.random(#NPC_TYPES)].name
             if n1 ~= n2 then npc_talk_to_npc(n1, n2) end
+        end
+    end
+
+    -- 每日计划: 新的一天开始时为所有NPC生成计划
+    if town_center and #minetest.get_connected_players() > 0 then
+        local current_day = math.floor(minetest.get_gametime() / 86400)
+        if current_day ~= last_day then
+            last_day = current_day
+            for _, nd in ipairs(NPC_TYPES) do
+                generate_daily_plan(nd.name)
+            end
         end
     end
 end)
@@ -742,6 +831,8 @@ minetest.register_chatcommand("town", {
                     walk_pos={x=pos.x+nd.walk_pos.x,y=pos.y+nd.walk_pos.y,z=pos.z+nd.walk_pos.z},
                 }
                 add_memory(nd.name, "我是" .. nd.display .. "，住在小镇里", 4)
+                -- 生成每日计划 (异步)
+                generate_daily_plan(nd.name)
             end
         end
 

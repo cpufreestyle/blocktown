@@ -55,6 +55,29 @@ button { padding:12px 24px; font-size:15px; border:none; border-radius:8px; curs
 .history-time { color:#6272a4; font-size:11px; white-space:nowrap; }
 .history-text { color:#e0e0e0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .history-count { color:#50fa7b; font-size:11px; white-space:nowrap; }
+/* 标签页 */
+.tab-bar { display:flex; gap:8px; margin-bottom:16px; border-bottom:2px solid #0f3460; padding-bottom:8px; }
+.tab-btn { padding:10px 20px; background:#16213e; color:#888; border:1px solid #0f3460; border-radius:8px 8px 0 0; cursor:pointer; font-size:15px; font-weight:600; transition:0.2s; }
+.tab-btn.active { background:#1a4080; color:#50fa7b; border-color:#50fa7b; }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+/* NPC 卡片 */
+.npc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; margin-bottom:16px; }
+.npc-card { background:#16213e; border:2px solid #333; border-radius:10px; padding:14px; cursor:pointer; transition:0.2s; }
+.npc-card:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,0.4); }
+.npc-card.selected { border-color:#50fa7b; box-shadow:0 0 12px rgba(80,250,123,0.3); }
+.npc-emoji { font-size:32px; text-align:center; }
+.npc-name { font-size:17px; font-weight:700; text-align:center; margin:6px 0; }
+.npc-role { font-size:13px; color:#8be9fd; text-align:center; }
+.npc-loc { font-size:12px; color:#6272a4; margin-top:6px; }
+.npc-quest { font-size:12px; color:#f1fa8c; margin-top:4px; }
+/* 聊天框 */
+.chat-box { background:#0d1117; border-radius:10px; padding:14px; min-height:260px; max-height:400px; overflow-y:auto; margin-bottom:10px; font-size:14px; }
+.chat-msg { padding:8px 12px; margin-bottom:8px; border-radius:8px; max-width:85%; }
+.chat-user { background:#0f3460; color:#e0e0e0; margin-left:auto; text-align:right; }
+.chat-npc { background:#1a3a2a; color:#d0ffd0; }
+.install-steps { background:#0d1117; border-radius:10px; padding:16px; font-size:14px; color:#aaa; line-height:1.8; }
+.install-steps code { background:#1a1a2e; padding:2px 6px; border-radius:4px; color:#8be9fd; }
 @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
 .preview-container { position:relative; background:#0d1117; border-radius:8px; border:1px solid #333; overflow:hidden; }
 .preview-canvas { display:block; margin:0 auto; cursor:grab; }
@@ -78,9 +101,15 @@ td { color:#aaa; }
 </head>
 <body>
 <div class="container">
-<h1>🏗️ Luanti 自然语言建筑生成器</h1>
-<p class="subtitle">输入自然语言 → 自动解析 → 生成 Lua mod → 安装到 Luanti</p>
+<h1>🏗️ Luanti 工具套件</h1>
+<p class="subtitle">自然语言建筑生成 + AI 小镇 NPC 对话</p>
 
+<div class="tab-bar">
+<button class="tab-btn active" data-tab="builder" onclick="switchTab('builder')">🏗️ 建筑生成器</button>
+<button class="tab-btn" data-tab="town" onclick="switchTab('town')">🏘️ AI 小镇</button>
+</div>
+
+<div id="tab-builder" class="tab-panel active">
 <div class="card">
 <label>描述你想要的建筑：</label>
 <input type="text" id="input" value="建一个红色的城堡，有塔楼" placeholder="例如：建造一座大型金字塔">
@@ -246,6 +275,51 @@ td { color:#aaa; }
 <tr><td>🚀 飞船</td><td>spaceship</td><td>🍄 蘑菇</td><td>mushroom</td></tr>
 <tr><td>❤️ 爱心</td><td>heart</td><td>🔮 球体</td><td>sphere</td></tr>
 <tr><td>🌀 螺旋塔</td><td>spiral</td><td>🏘️ 村庄</td><td>village</td></tr>
+</table>
+</div>
+</div>
+</div>
+
+<!-- ===== AI 小镇 Tab ===== -->
+<div id="tab-town" class="tab-panel">
+<div class="card">
+<label>🎭 选择 NPC 开始聊天 (直连 AI，无需打开游戏)</label>
+<div class="npc-grid" id="npcGrid">加载中...</div>
+<div class="chat-box" id="townChatHeader" style="min-height:auto; padding:8px 12px; font-weight:700;">👆 点击上方 NPC 卡片开始对话</div>
+<div class="chat-box" id="townChatBox">对话内容将显示在这里...</div>
+<div style="display:flex; gap:8px;">
+<input type="text" id="townMsg" placeholder="输入消息，按 Enter 发送" onkeydown="townChatEnter(event)" style="flex:1;">
+<button class="btn-ai" onclick="townSend()">💬 发送</button>
+</div>
+</div>
+
+<div class="card">
+<label>📥 在游戏中体验完整 AI 小镇</label>
+<div class="install-steps">
+<p>1️⃣ 安装 <b>Luanti</b> (Minetest)：<code>brew install --cask luanti</code> 或从官网下载</p>
+<p>2️⃣ 复制 mod 到游戏目录：</p>
+<p style="margin-left:20px;">macOS: <code>cp -r ai_town ~/Library/Application\ Support/minetest/mods/</code></p>
+<p style="margin-left:20px;">Linux: <code>cp -r ai_town ~/.minetest/mods/</code></p>
+<p style="margin-left:20px;">Windows: 复制到 <code>%APPDATA%\minetest\mods\</code></p>
+<p>3️⃣ 在游戏世界中启用 <code>ai_town</code> mod</p>
+<p>4️⃣ 进入游戏输入 <code>/town</code> 生成小镇</p>
+<p>5️⃣ 右键 NPC 开始对话</p>
+<p style="margin-top:8px; color:#6272a4;">🕹️ 游戏内命令: /town 生成 | /ai_npc 状态 | /weather 天气 | /ai_mem &lt;npc&gt; 记忆</p>
+</div>
+</div>
+
+<div class="card">
+<label>🎮 游戏内 NPC 特性</label>
+<table>
+<tr><th>系统</th><th>说明</th></tr>
+<tr><td>🧠 记忆系统</td><td>每个NPC 20条记忆流，按 recency+importance+relevance 检索</td></tr>
+<tr><td>💭 反思机制</td><td>每8轮对话 AI 自动总结，形成自我认知</td></tr>
+<tr><td>💬 NPC自主对话</td><td>NPC相遇自动聊天，互相传播八卦</td></tr>
+<tr><td>📅 每日计划</td><td>每天 AI 生成当日活动计划</td></tr>
+<tr><td>😊 情绪系统</td><td>0-100情绪，影响对话语气</td></tr>
+<tr><td>❤️ 好感度</td><td>陌生人→熟人→朋友→挚友</td></tr>
+<tr><td>🛒 经济系统</td><td>金锭买卖物品</td></tr>
+<tr><td>🌤️ 天气系统</td><td>晴/雨/雾，影响NPC心情</td></tr>
 </table>
 </div>
 </div>
@@ -773,6 +847,78 @@ document.getElementById('input').addEventListener('keydown', function(e) {
 });
 // 自动聚焦输入框
 document.getElementById('input').focus();
+// ===== AI 小镇 Tab =====
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    document.querySelectorAll('.tab-panel').forEach(function(p) {
+        p.classList.toggle('active', p.id === 'tab-' + tab);
+    });
+    if (tab === 'town') { loadTownNpcs(); }
+}
+// 加载 NPC 名册
+let townNpcs = [];
+function loadTownNpcs() {
+    fetch('/api?action=town_npcs').then(r => r.json()).then(data => {
+        townNpcs = data.npcs || [];
+        const grid = document.getElementById('npcGrid');
+        grid.innerHTML = '';
+        townNpcs.forEach(function(npc) {
+            const card = document.createElement('div');
+            card.className = 'npc-card';
+            card.style.borderColor = npc.color;
+            card.innerHTML = '<div class="npc-emoji">' + npc.emoji + '</div>' +
+                '<div class="npc-name" style="color:' + npc.color + '">' + npc.display + '</div>' +
+                '<div class="npc-role">' + npc.role + '</div>' +
+                '<div class="npc-loc">📍 ' + npc.location + '</div>' +
+                '<div class="npc-quest">📋 ' + npc.quest + '</div>';
+            card.onclick = function() { selectNpc(npc.name); };
+            grid.appendChild(card);
+        });
+    });
+}
+let selectedNpc = null;
+let townChatHistory = {};
+function selectNpc(name) {
+    selectedNpc = name;
+    townChatHistory[name] = townChatHistory[name] || [];
+    document.querySelectorAll('.npc-card').forEach(function(c) {
+        c.classList.remove('selected');
+    });
+    // 找到对应卡片
+    const npc = townNpcs.find(function(n) { return n.name === name; });
+    if (npc) {
+        document.getElementById('townChatHeader').innerHTML =
+            '正在和 ' + npc.emoji + ' <span style="color:' + npc.color + '">' + npc.display + '</span> 聊天';
+        document.getElementById('townChatBox').innerHTML = '';
+    }
+}
+function townSend() {
+    if (!selectedNpc) { alert('请先选择一个 NPC'); return; }
+    const msg = document.getElementById('townMsg').value.trim();
+    if (!msg) return;
+    const box = document.getElementById('townChatBox');
+    box.innerHTML += '<div class="chat-msg chat-user">🧑 你: ' + msg + '</div>';
+    document.getElementById('townMsg').value = '';
+    const hist = townChatHistory[selectedNpc] || [];
+    const url = '/api?action=town_chat&npc=' + encodeURIComponent(selectedNpc) +
+        '&input=' + encodeURIComponent(msg) +
+        '&history=' + encodeURIComponent(JSON.stringify(hist));
+    fetch(url).then(r => r.json()).then(data => {
+        if (data.error) {
+            box.innerHTML += '<div class="chat-msg chat-npc">⚠️ ' + data.error + '</div>';
+        } else {
+            box.innerHTML += '<div class="chat-msg chat-npc">' + data.reply + '</div>';
+            townChatHistory[selectedNpc].push({role:'user', content:msg});
+            townChatHistory[selectedNpc].push({role:'assistant', content:data.reply});
+        }
+        box.scrollTop = box.scrollHeight;
+    });
+}
+function townChatEnter(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); townSend(); }
+}
 </script>
 </body>
 </html>'''

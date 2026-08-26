@@ -12,6 +12,7 @@ from .lua_gen import gen_lua
 from .llm import BLOCK_TYPE_TO_COLOR, blocks_to_lua, call_llm, call_llm_chat, cmds_to_blocks, parse_llm_json
 from .preview import gen_preview_blocks
 from .worlds import enable_mod_in_world, install_mod, launch_luanti, list_worlds
+from .town import TOWN_NPCS, chat_with_npc
 from .webui import HTML_PAGE
 
 class Handler(BaseHTTPRequestHandler):
@@ -220,6 +221,33 @@ class Handler(BaseHTTPRequestHandler):
                                      "launch": launch_luanti(world_path),
                                      "message": "已安装mod并启动游戏，进入后输入 /build 生成建筑"})
                     self._send_json(resp)
+                except Exception as e:
+                    self._send_json({"error": str(e)})
+            elif action == 'town_npcs':
+                # AI 小镇 NPC 名册
+                self._send_json({"npcs": TOWN_NPCS})
+            elif action == 'town_chat':
+                # AI 小镇 NPC 聊天预览 (直连 StepFun)
+                npc_name = qs.get('npc', [''])[0]
+                message = user_input
+                mood = int(qs.get('mood', ['50'])[0] or '50')
+                relation = int(qs.get('relation', ['50'])[0] or '50')
+                weather = qs.get('weather', ['clear'])[0]
+                if not npc_name or not message:
+                    self._send_json({"error": "缺少 npc 或 message 参数"})
+                    return
+                try:
+                    history = json.loads(qs.get('history', ['[]'])[0] or '[]')
+                except (ValueError, TypeError):
+                    history = []
+                if not isinstance(history, list):
+                    history = []
+                try:
+                    reply, err = chat_with_npc(npc_name, message, history, mood, relation, weather)
+                    if err:
+                        self._send_json({"error": err})
+                    else:
+                        self._send_json({"reply": reply, "npc": npc_name})
                 except Exception as e:
                     self._send_json({"error": str(e)})
             else:
