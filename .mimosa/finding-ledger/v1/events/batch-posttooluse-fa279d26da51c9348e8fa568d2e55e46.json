@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "posttooluse-fa279d26da51c9348e8fa568d2e55e46",
+  "runId": null,
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "PostToolUse"
+  },
+  "revision": null,
+  "diffHash": null,
+  "rulesVersion": null,
+  "sessionHash": "03b96d9de95b9d8604201630d6fb20d86844f0fe42d185abbe52ac4c74aaf80f",
+  "reportRef": null,
+  "events": [
+    {
+      "eventId": "hook-9feecd6db5ca1fec52a71daebadae4fb",
+      "findingId": "mimosa-822c5309c599b4b8ed567f27",
+      "type": "static_fix_verified",
+      "at": "2026-08-26T16:10:19.352Z",
+      "identity": {
+        "projectRelativeFile": "lb_pkg/town.py",
+        "ruleId": "security",
+        "codeEvidenceHash": "7e24b95647bd31aa702994b7f907d1d1e9b7234f21c7745ae2a11f9993b6bd33",
+        "confidence": "stable"
+      },
+      "scope": "direct",
+      "line": 17,
+      "endLine": 17,
+      "reasonCode": "static_rescan_passed",
+      "reportedToAgent": false,
+      "evidence": {
+        "kind": "static_scan",
+        "boundary": "observed",
+        "producer": "deterministic",
+        "evidenceHash": "7e24b95647bd31aa702994b7f907d1d1e9b7234f21c7745ae2a11f9993b6bd33"
+      },
+      "sequence": 0
+    }
+  ],
+  "observedFindingIds": [],
+  "verifiedFiles": [],
+  "recordedAt": "2026-08-26T16:10:19.604Z"
+}

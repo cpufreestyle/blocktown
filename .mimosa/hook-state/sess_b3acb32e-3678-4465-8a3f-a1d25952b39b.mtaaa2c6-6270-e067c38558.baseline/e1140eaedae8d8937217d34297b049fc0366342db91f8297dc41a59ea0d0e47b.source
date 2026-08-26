@@ -68,12 +68,9 @@ TOWN_NPCS = [
 ]
 
 # StepFun API 配置 (与 ai_town/init.lua 一致)
-# API Key 从环境变量 STEPFUN_API_KEY 读取，不写入源码; 端点为固定字面量 (防 SSRF)
-import os
-STEPFUN_API_URL = "https://api.stepfun.com/v1/chat/completions"
 TOWN_AI_CONFIG = {
-    "api_key": os.environ.get("STEPFUN_API_KEY", ""),
-    "base_url": STEPFUN_API_URL,
+    "api_key": "34h3kvASCJOJDoGu2g4xwRkwlYeqstFYDk6Or0RWfFWxVrgiL14QijTQ04Usoxzyw",
+    "base_url": "https://api.stepfun.com/v1/chat/completions",
     "model": "step-3.5-flash",
 }
 
@@ -98,11 +95,12 @@ def chat_with_npc(npc_name, user_message, history=None, mood=50, relation=50, we
     Returns:
         (reply, error) 元组
     """
+    import urllib.request
+    import urllib.error
+
     npc = get_npc(npc_name)
     if not npc:
         return None, f"未知NPC: {npc_name}"
-    if not TOWN_AI_CONFIG["api_key"]:
-        return None, "未配置 STEPFUN_API_KEY 环境变量，无法与NPC对话"
 
     mood_str = "开心" if mood > 75 else ("愉快" if mood > 50 else ("一般" if mood > 25 else "不悦"))
     rel_str = "挚友" if relation > 75 else ("朋友" if relation > 50 else ("熟人" if relation > 25 else "陌生人"))
@@ -122,33 +120,23 @@ def chat_with_npc(npc_name, user_message, history=None, mood=50, relation=50, we
     }
 
     import json
-    import subprocess
-    if TOWN_AI_CONFIG["base_url"] != STEPFUN_API_URL:
-        return None, "非法的 API 地址"  # 仅允许调用固定官方端点 (防 SSRF)
-    api_key = TOWN_AI_CONFIG["api_key"]
-    auth_header = "Authorization: Bearer " + api_key
-    payload_str = json.dumps(payload, ensure_ascii=False)
-    # POST body 经 stdin 传入 ("@-")，参数列表不含用户数据，shell=False 无拼接
-    curl_cmd = [
-        "curl", "-s", "-X", "POST", STEPFUN_API_URL,
-        "-H", "Content-Type: application/json",
-        "-H", auth_header,
-        "--data-binary", "@-",
-        "--connect-timeout", "10",
-        "--max-time", "60",
-    ]
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        TOWN_AI_CONFIG["base_url"],
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + TOWN_AI_CONFIG["api_key"],
+        },
+        method="POST",
+    )
+
     try:
-        result = subprocess.run(curl_cmd, input=payload_str,
-                                capture_output=True, text=True, timeout=70, shell=False)
-        if result.returncode != 0:
-            return None, "NPC 服务连接失败"
-        resp_data = json.loads(result.stdout)
-        if "error" in resp_data:
-            err = resp_data["error"]
-            return None, "API 错误: " + str(err.get("message", str(err)))[:200]
-        content = resp_data["choices"][0]["message"]["content"]
-        return content, None
-    except subprocess.TimeoutExpired:
-        return None, "NPC 请求超时"
-    except (ValueError, KeyError):
-        return None, "响应解析失败"
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            content = result["choices"][0]["message"]["content"]
+            return content, None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code}"
+    except Exception as e:
+        return None, str(e)

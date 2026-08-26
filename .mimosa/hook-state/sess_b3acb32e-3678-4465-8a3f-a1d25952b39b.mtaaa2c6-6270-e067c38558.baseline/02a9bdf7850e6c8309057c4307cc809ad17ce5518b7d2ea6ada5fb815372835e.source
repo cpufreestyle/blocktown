@@ -1,6 +1,5 @@
 """Luanti Builder - preview 模块。"""
 import math
-import random
 
 # ============================================================
 # 预览方块生成
@@ -189,6 +188,7 @@ def gen_preview_blocks(params):
         # 花朵
         flower_colors = ["#e74c3c","#f1c40f","#9b59b6","#e67e22"]
         for i in range(10*s):
+            import random
             fx = random.randint(-w+1, w-1)
             fz = random.randint(-w+1, w-1)
             blocks.append({"x": fx, "y": 1, "z": fz, "color": flower_colors[i % 4]})

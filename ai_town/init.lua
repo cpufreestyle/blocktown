@@ -5,7 +5,8 @@
 -- 配置
 -- ============================================================
 local AI_CONFIG = {
-    api_key = "34h3kvASCJOJDoGu2g4xwRkwlYeqstFYDk6Or0RWfFWxVrgiL14QijTQ04Usoxzyw",
+    -- API Key 从 minetest.conf 的 stepfun_api_key 设置读取 (不写入源码)
+    api_key = minetest.settings:get("stepfun_api_key") or "",
     base_url = "https://api.stepfun.com/v1/chat/completions",
     model = "step-3.5-flash",
     max_history = 6,

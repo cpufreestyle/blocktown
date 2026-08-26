@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-08-26T16:10:31.593Z",
+  "sessionId": "sess_b3acb32e-3678-4465-8a3f-a1d25952b39b",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "lb_pkg/town.py",
+  "outcome": "clear",
+  "coverage": "complete",
+  "findingCount": 0,
+  "durationMs": 6,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}
