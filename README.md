@@ -34,11 +34,55 @@
 
 ## 🚀 快速开始
 
+### 第一步: 安装 Luanti (Minetest) 游戏
+
+> Luanti（原名 Minetest）是一个开源的 3D 沙盒游戏引擎，本项目基于它运行。
+
+| 系统 | 下载方式 |
+|------|---------|
+| **macOS** | [下载 .zip](https://github.com/luanti-org/luanti/releases/latest) → 解压 → 拖到 Applications/ |
+| **Windows** | [下载 .exe 安装包](https://github.com/luanti-org/luanti/releases/latest) → 运行安装 |
+| **Linux** | `sudo apt install luanti` 或 [Flatpak](https://flathub.org/apps/net.minetest.Minetest) |
+| **Android** | [Google Play](https://play.google.com/store/apps/details?id=net.minetest.minetest) 或 [F-Droid](https://f-droid.org/packages/net.minetest.minetest/) |
+
+安装后还需要安装 **Minetest Game**（基础游戏内容）：
+1. 打开 Luanti → 主菜单 → **Content (内容)**
+2. 搜索 **Minetest Game** → 点击安装
+3. 回到主菜单 → **Start Game** → 选择 Minetest Game → **New World** 创建新世界
+
+### 第二步: 安装本项目的 Mod 和纹理包
+
 ```bash
-# 启动 Builder GUI
+# 克隆仓库
+git clone https://github.com/cpufreestyle/luanti-builder.git
 cd luanti_builder
+
+# 运行一键安装脚本 (自动复制 mod/纹理包到 Luanti 目录)
+bash install.sh
+
+# 或手动复制:
+# macOS:   cp -r my_first_mod nl_builder ai_town ~/Library/Application\ Support/minetest/mods/
+#          cp -r lego_style ~/Library/Application\ Support/minetest/texture_packs/
+# Windows: 复制到 %APPDATA%\minetest\mods\ 和 %APPDATA%\minetest\texture_packs\
+# Linux:   复制到 ~/.minetest/mods/ 和 ~/.minetest/texture_packs/
+```
+
+### 第三步: 在游戏中启用 Mod
+
+1. 打开 Luanti → 选中你的世界 → 点 **Settings (设置)**
+2. 在 **Mods (模组)** 标签页中勾选:
+   - ✅ `my_first_mod` — 游戏核心 mod
+   - ✅ `nl_builder` — AI 建筑生成器
+   - ✅ `ai_town` — AI 小镇 NPC 对话系统
+3. 在 **Texture Packs (纹理包)** 标签页中选择 `lego_style`
+4. 点 **Play** 进入游戏
+
+### 第四步 (可选): 启动 AI 建筑生成器
+
+```bash
+# 启动 Builder GUI (浏览器自动打开)
 python3 luanti_builder_web.py
-# 浏览器自动打开 http://localhost:8765
+# 浏览器访问 http://localhost:8765
 ```
 
 ## 📁 目录结构
