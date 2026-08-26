@@ -1,0 +1,164 @@
+{
+  "summary": {
+    "projectName": "luanti_builder",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 26,
+    "overview": "项目是一个 13 天历史的 Python 代码生成工具，具备清晰的模块结构但缺少面向 Agent 的项目指引和任何自动化验证机制。两个核心问题影响 Agent 在此项目上的有效性：无法获取项目架构约定，以及无法在变更后机械验证代码生成的正确性。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [],
+      "coverageRows": [
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Global"
+          ],
+          "count": 16,
+          "paths": [
+            "~/.agents/skills/browser-use/SKILL.md",
+            "~/.agents/skills/microsoft-foundry/models/deploy-model/capacity/SKILL.md",
+            "~/.agents/skills/microsoft-foundry/models/deploy-model/customize/SKILL.md",
+            "~/.agents/skills/microsoft-foundry/models/deploy-model/SKILL.md",
+            "~/.agents/skills/figma/SKILL.md",
+            "~/.agents/skills/microsoft-foundry/finetuning/SKILL.md",
+            "~/.agents/skills/hyperframes/SKILL.md",
+            "~/.agents/skills/hyperframes-animation/SKILL.md",
+            "~/.agents/skills/hyperframes-cli/SKILL.md",
+            "~/.agents/skills/hyperframes-core/SKILL.md",
+            "~/.agents/skills/hyperframes-creative/SKILL.md",
+            "~/.agents/skills/hyperframes-keyframes/SKILL.md"
+          ]
+        },
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Hooks",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Commands",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Plugins",
+          "scopes": [
+            "Plugin"
+          ],
+          "count": 0
+        }
+      ],
+      "repositorySourceRows": []
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 40,
+        "summary": "README.md 提供了面向用户的功能说明，但项目缺少 AGENTS.md 或等效的 Agent 指引文件。Agent 无法获知模块职责边界、开发约定和核心架构，影响任务上下文关联和范围控制。",
+        "findingRefs": [
+          "no-agent-facing-project-instructions"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 45,
+        "summary": "项目具有 setup.py 和 install.sh 安装路径，README 记录了启动命令。但缺少 Agent 可消费的项目操作指引（如依赖安装顺序、运行时要求、故障排查步骤），启动和操作的证据状态为 Missing。",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 25,
+        "summary": "12 个 Python 源文件、0 个测试文件。无 lint 配置、无 CI/CD、无任何自动化验证机制。代码生成管道（NLP → LLM → Lua 生成 → 预览）的变更无法通过机械检查验证。",
+        "findingRefs": [
+          "no-mechanical-validation-for-code-generation"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 35,
+        "summary": "Git 提供基本版本控制。无 CI/CD 管道、无合并保护、无验收标准或交付接收边界。交付声明仅依赖本地手动验证。",
+        "findingRefs": []
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "无 Session 数据可供学习分析。项目无 Memory、无 Rule、无 Hook、无 Workflow 等可复用知识路由机制。无法捕获和重用改进。",
+        "findingRefs": []
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "no-agent-facing-project-instructions",
+      "title": "Agent 缺少项目架构和模块约定指引，编辑缺乏上下文边界",
+      "severity": "Medium",
+      "reason": "项目拥有 12 个 Python 源文件，分布在 lb_pkg 包（9 个文件）和根目录（3 个文件），具有清晰的模块分工（NLP、LLM、Lua 生成、Web UI、预览、世界管理），但没有任何 AGENTS.md 或等效的 Agent 指引文件。README.md 仅面向终端用户描述功能，不包含开发约定、架构决策或模块职责边界。Agent 编辑核心模块时无法确定影响范围、依赖关系和项目特定的编码约定，增加了引入不兼容变更或偏离项目设计意图的风险。证据状态：relevant-context 为 Missing（无 Agent 指引文件可路由），项目历史仅 13 天 15 次提交，lb_pkg 为核心候选（score 69, high confidence）。",
+      "expectedOutput": [
+        "Update the existing Rule owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Rule",
+      "aiFixPrompt": "/better-harness fix this issue\n\n在项目根目录创建 AGENTS.md，包含：\n1. 项目概述（一句话描述：自然语言生成 Luanti/Minetest 建筑的 Python 工具）\n2. 核心模块职责（lb_pkg 下各文件的职责映射：nlp.py→自然语言处理, llm.py→大模型接口, lua_gen.py→Lua 代码生成, webui.py→Web 界面, preview.py→3D 预览, server.py→服务入口, worlds.py→世界管理, paths.py→平台路径检测）\n3. 开发约定（Python ≥ 3.6, 入口点为 lb_pkg.server:main, 使用 setup.py 安装）\n4. 不要修改的文件范围（lego_style/textures/ 和 my_first_mod/ 为游戏资源，非工具代码）\n\n## Validation\n\n- 确认 AGENTS.md 存在于项目根目录\n- 确认内容覆盖模块职责和开发约定",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "no-mechanical-validation-for-code-generation",
+      "title": "代码生成管道缺少自动化测试，变更后的行为正确性无法机械验证",
+      "severity": "Medium",
+      "reason": "项目包含完整的代码生成管道（NLP 处理 → LLM 调用 → Lua 代码生成 → 3D 预览 → Mod 安装），但 12 个源文件对应 0 个测试文件，无 pytest/unittest 配置，无 lint 规则。对核心模块（如 lb_pkg/lua_gen.py 的 Lua 生成逻辑、lb_pkg/nlp.py 的自然语言处理、lb_pkg/llm.py 的大模型接口）的任何修改都无法通过机械检查验证行为正确性。项目核心候选 lb_pkg（score 69, high confidence）在 30 天窗口内被 5 次提交触及，churn 最高的文件 luanti_builder_web.py 有 5859 行变更，但无聚焦测试覆盖这些高频变更路径。此发现基于项目测试基础设施缺失的事实，不依赖 Session 验证行为观察。",
+      "expectedOutput": [
+        "Update the existing Test owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Test",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为项目建立基础测试框架：\n1. 创建 tests/ 目录\n2. 添加 pytest 配置（pyproject.toml 或 setup.cfg 中的 test 配置）\n3. 为核心模块编写至少一个基础测试，优先覆盖：\n   - lb_pkg/nlp.py 的关键词解析和模板匹配逻辑\n   - lb_pkg/lua_gen.py 的 Lua 代码生成输出格式\n   - lb_pkg/paths.py 的平台路径检测\n4. 确保 python -m pytest 可以运行并返回结果\n\n## Validation\n\n- 运行 python -m pytest 确认测试框架可用\n- 确认至少一个测试通过，证明核心模块行为可验证",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    }
+  ]
+}

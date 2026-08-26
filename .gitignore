@@ -5,3 +5,5 @@ __pycache__/
 *.log
 *.bak
 demo_video.mov
+.venv/
+*.egg-info/
