@@ -1,6 +1,6 @@
-# 🏗️ Luanti Builder
+# 🏗️ Blocktown
 
-自然语言生成 Luanti/Minetest 建筑 — 跨平台 GUI 工具 + 完整游戏 Mod
+Luanti/Minetest AI 工具套件 — 自然语言建筑生成 + AI 小镇 (跨平台)
 
 ## ✨ 功能
 
@@ -54,7 +54,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/cpufreestyle/luanti-builder.git
+git clone https://github.com/cpufreestyle/blocktown.git
 cd luanti_builder
 
 # 运行一键安装脚本 (自动复制 mod/纹理包到 Luanti 目录)

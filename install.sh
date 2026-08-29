@@ -1,8 +1,8 @@
 #!/bin/bash
-# Luanti Builder - 一键安装脚本 (macOS/Linux)
+# Blocktown - 一键安装脚本 (macOS/Linux)
 set -e
 
-echo "🏗️  Luanti Builder 一键安装"
+echo "🏗️  Blocktown 一键安装"
 echo "============================"
 
 # 检查 Python
@@ -13,7 +13,7 @@ fi
 echo "✅ Python3: $(python3 --version)"
 
 # 安装
-echo "📦 安装 luanti-builder..."
+echo "📦 安装 blocktown..."
 pip3 install -e . --quiet 2>/dev/null || pip3 install -e . 2>/dev/null || {
     echo "⚠️  pip 安装失败，使用直接运行模式"
 }
@@ -52,14 +52,14 @@ fi
 
 # 创建 macOS launchd 服务 (可选)
 if [ "$(uname -s)" = "Darwin" ]; then
-    PLIST="$HOME/Library/LaunchAgents/com.luanti-builder.plist"
+    PLIST="$HOME/Library/LaunchAgents/com.blocktown.plist"
     cat > "$PLIST" << EOFPLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.luanti-builder</string>
+    <string>com.blocktown</string>
     <key>ProgramArguments</key>
     <array>
         <string>python3</string>
@@ -82,6 +82,6 @@ echo "✅ 安装完成！"
 echo ""
 echo "🚀 启动方式:"
 echo "   python3 luanti_builder_web.py"
-echo "   或: luanti-builder (如果 pip 安装成功)"
+echo "   或: blocktown (如果 pip 安装成功)"
 echo ""
 echo "🌐 浏览器打开: http://localhost:8765"
