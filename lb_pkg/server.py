@@ -9,10 +9,10 @@ from urllib.parse import parse_qs
 from .paths import get_minetest_dir
 from .nlp import parse_input
 from .lua_gen import gen_lua
-from .llm import BLOCK_TYPE_TO_COLOR, blocks_to_lua, call_llm, call_llm_chat, cmds_to_blocks, parse_llm_json
+from .llm import BLOCK_TYPE_TO_COLOR, blocks_to_lua, call_llm, call_llm_chat, call_llm_refine, cmds_to_blocks, parse_llm_json
 from .preview import gen_preview_blocks
 from .worlds import enable_mod_in_world, install_mod, launch_luanti, list_worlds
-from .town import TOWN_NPCS, chat_with_npc
+from .town import TOWN_NPCS, chat_with_npc, generate_diary, get_relations
 from .webui import HTML_PAGE
 
 class Handler(BaseHTTPRequestHandler):
@@ -46,6 +46,30 @@ class Handler(BaseHTTPRequestHandler):
                 params = parse_input(user_input)
                 blocks = gen_preview_blocks(params)
                 self._send_json({"blocks": blocks})
+            elif action == 'expand':
+                # 蓝图导入: cmds JSON → 方块 + Lua (不安装不启动)
+                cmds_raw = qs.get('cmds', [''])[0]
+                try:
+                    cmds = json.loads(cmds_raw)
+                except (ValueError, TypeError):
+                    self._send_json({"error": "cmds JSON 解析失败"})
+                    return
+                if not isinstance(cmds, list) or not cmds:
+                    self._send_json({"error": "cmds 为空或格式错误"})
+                    return
+                blocks = cmds_to_blocks(cmds)
+                if not blocks:
+                    self._send_json({"error": "命令无法转为方块"})
+                    return
+                lua, valid_blocks = blocks_to_lua(blocks, user_input or "导入的蓝图")
+                self._send_json({
+                    "cmds": cmds,
+                    "lua": lua,
+                    "count": len(valid_blocks),
+                    "blocks": [{"x": b["x"], "y": b["y"], "z": b["z"],
+                                "color": BLOCK_TYPE_TO_COLOR.get(b.get("type", "stone"), "#7f8c8d")}
+                               for b in valid_blocks],
+                })
             elif action == 'launch':
                 result = launch_luanti()
                 self._send_json(result)
@@ -175,6 +199,41 @@ class Handler(BaseHTTPRequestHandler):
                     })
                 except Exception as e:
                     self._send_json({"error": str(e)})
+            elif action == 'ai_refine':
+                # AI 审美迭代: 审视当前建筑 (可选附截图) 输出改进 cmds
+                api_key = qs.get('api_key', [''])[0]
+                base_url = qs.get('base_url', ['https://api.deepseek.com/v1'])[0]
+                model = qs.get('model', ['deepseek-chat'])[0]
+                if not api_key:
+                    self._send_json({"error": "请先设置 API Key"})
+                    return
+                try:
+                    cmds = json.loads(qs.get('cmds', [''])[0] or 'null')
+                except (ValueError, TypeError):
+                    cmds = None
+                if not isinstance(cmds, list) or not cmds:
+                    self._send_json({"error": "缺少当前建筑 cmds"})
+                    return
+                image = qs.get('image', [''])[0] or None  # data:image/png;base64,...
+                try:
+                    new_cmds, note = call_llm_refine(api_key, base_url, model,
+                                                     user_input, cmds, image)
+                    blocks = cmds_to_blocks(new_cmds)
+                    if not blocks:
+                        self._send_json({"error": "AI 返回的命令无法转为方块"})
+                        return
+                    lua, valid_blocks = blocks_to_lua(blocks, user_input)
+                    self._send_json({
+                        "cmds": new_cmds,
+                        "lua": lua,
+                        "count": len(valid_blocks),
+                        "mode": note,
+                        "blocks": [{"x": b["x"], "y": b["y"], "z": b["z"],
+                                    "color": BLOCK_TYPE_TO_COLOR.get(b.get("type", "stone"), "#7f8c8d")}
+                                   for b in valid_blocks],
+                    })
+                except Exception as e:
+                    self._send_json({"error": str(e)})
             elif action == 'ai_chat':
                 # 对话式迭代建造: 基于历史与当前建筑增量修改
                 api_key = qs.get('api_key', [''])[0]
@@ -250,6 +309,30 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json({"reply": reply, "npc": npc_name})
                 except Exception as e:
                     self._send_json({"error": str(e)})
+            elif action == 'town_diary':
+                # NPC 日记: 无 npc 参数生成全部, 有则单个
+                weather = qs.get('weather', ['clear'])[0]
+                try:
+                    npc_name = qs.get('npc', [''])[0]
+                    if npc_name:
+                        diary, err = generate_diary(npc_name, weather)
+                        if err:
+                            self._send_json({"error": err})
+                        else:
+                            self._send_json({"npc": npc_name, "diary": diary})
+                        return
+                    diaries = []
+                    for npc in TOWN_NPCS:
+                        diary, err = generate_diary(npc["name"], weather)
+                        diaries.append({"npc": npc["name"], "display": npc["display"],
+                                        "emoji": npc["emoji"], "color": npc["color"],
+                                        "diary": diary, "err": err})
+                    self._send_json({"diaries": diaries})
+                except Exception as e:
+                    self._send_json({"error": str(e)})
+            elif action == 'town_relations':
+                # NPC 关系图谱数据
+                self._send_json(get_relations())
             else:
                 self._send_json({"error": "未知操作"})
         else:

@@ -423,6 +423,29 @@ td { color:var(--text-dim); }
 </div>
 <div class="preview-info" id="previewInfo"></div>
 </div>
+<div class="btn-row" style="margin-top:10px; align-items:center;">
+<button class="btn-ai btn-sm" onclick="refineLoop()" id="refineBtn" disabled>🔄 AI 审美迭代</button>
+<select id="refineRounds" style="padding:5px 8px; font-size:13px;">
+<option value="1">迭代 1 轮</option>
+<option value="2">迭代 2 轮</option>
+<option value="3">迭代 3 轮</option>
+</select>
+<span style="font-size:12px; color:var(--text-dim);">需 AI 生成后可用 · 视觉模型效果更佳 (不支持时自动纯文本评审)</span>
+</div>
+<div class="btn-row" style="margin-top:10px;">
+<button class="btn-ghost btn-sm" onclick="exportBlueprint()">📤 导出蓝图</button>
+<button class="btn-ghost btn-sm" onclick="copyShareLink()">🔗 复制分享链接</button>
+<button class="btn-ghost btn-sm" onclick="importBlueprint()">📥 导入蓝图</button>
+<input type="file" id="bpFile" accept=".json" style="display:none;" onchange="handleBpFile(event)">
+</div>
+</div>
+
+<div class="card">
+<label>📦 蓝图库 (保存在浏览器本地)</label>
+<div id="bpList" style="max-height:140px; overflow-y:auto;"></div>
+<div class="btn-row" style="margin-top:8px;">
+<button class="btn-parse btn-sm" onclick="saveBlueprintDialog()">💾 保存当前建筑</button>
+</div>
 </div>
 
 <div class="card">
@@ -490,6 +513,25 @@ td { color:var(--text-dim); }
 <p>4️⃣ 进入游戏输入 <code>/town</code> 生成小镇</p>
 <p>5️⃣ 右键 NPC 开始对话</p>
 <p style="margin-top:8px; color:var(--text-dim);">🕹️ 游戏内命令: /town 生成 | /ai_npc 状态 | /weather 天气 | /ai_mem &lt;npc&gt; 记忆</p>
+</div>
+</div>
+
+<div class="card">
+<label>📖 小镇日报 (AI 生成各 NPC 第一人称日记)</label>
+<div class="btn-row" style="margin-bottom:10px;">
+<button class="btn-ai btn-sm" onclick="loadTownDiary()">📝 生成今日日报</button>
+<span id="diaryStatus" style="font-size:12px; color:var(--text-dim);">6 位 NPC × 1 篇日记 · 按日缓存</span>
+</div>
+<div class="npc-grid" id="diaryGrid"><div style="color:var(--text-dim); font-size:13px;">点击「生成今日日报」查看小镇的一天</div></div>
+</div>
+
+<div class="card">
+<label>🕸️ NPC 关系图谱 (线越粗越亲密)</label>
+<div class="preview-container">
+<canvas id="relationCanvas" width="600" height="320" style="display:block; margin:0 auto; cursor:default;"></canvas>
+</div>
+<div class="btn-row" style="margin-top:8px;">
+<button class="btn-parse btn-sm" onclick="renderRelations()">🔄 刷新图谱</button>
 </div>
 </div>
 
@@ -734,6 +776,8 @@ function doAIPreview() {
             return;
         }
         previewBlocks = data.blocks || [];
+        lastCmds = data.cmds || lastCmds;
+        setRefineEnabled();
         renderPreview();
         saveHistory(document.getElementById('input').value, previewBlocks, data.count||0);
         setStatus('✅ AI 预览已生成 (' + (data.count||0) + ' 个方块)', 'status-ok');
@@ -752,6 +796,8 @@ function doAIGenerate() {
         if(data.error) { setStatus(data.error, 'status-err'); if(data.raw) { document.getElementById('code').textContent = 'AI 返回内容:\\n' + data.raw; } return; }
         document.getElementById('code').textContent = data.lua || '';
         previewBlocks = data.blocks || [];
+        lastCmds = data.cmds || lastCmds;
+        setRefineEnabled();
         renderPreview();
         document.getElementById('pathInfo').textContent = 'Mod: ' + (data.mod_path||'') + ' | 方块: ' + (data.count||0);
         var lr = data.launch || {};
@@ -838,6 +884,8 @@ function sendChat(withInstall) {
         chatCmds = data.cmds || null;
         saveChatState();
         previewBlocks = data.blocks || [];
+        lastCmds = data.cmds || lastCmds;
+        setRefineEnabled();
         renderPreview();
         if (data.lua) document.getElementById('code').textContent = data.lua;
         if (withInstall) {
@@ -899,6 +947,8 @@ function doPreview() {
     fetchAPI('preview').then(function(data) {
         if(data.error) { setStatus(data.error, 'status-err'); if(data.raw) { document.getElementById('code').textContent = 'AI 返回内容:\\n' + data.raw; } return; }
         previewBlocks = data.blocks || [];
+        lastCmds = null;   // 关键词模式无 cmds，审美迭代不可用
+        setRefineEnabled();
         renderPreview();
         setStatus('✅ 3D 预览已生成 (' + previewBlocks.length + ' 个方块)', 'status-ok');
     });
@@ -1111,6 +1161,209 @@ function renderPreview() {
     }
 }
 
+// ===== 蓝图分享 (导出/导入/分享链接/本地蓝图库) =====
+var lastCmds = null;   // AI 生成的 cmds (关键词模式为 null)
+
+function setRefineEnabled() {
+    var btn = document.getElementById('refineBtn');
+    if (btn) btn.disabled = !(lastCmds && lastCmds.length > 0 && previewBlocks.length > 0);
+}
+
+// ===== AI 审美迭代 (多模态自评循环) =====
+var refining = false;
+function refineLoop() {
+    if (refining) return;
+    if (!lastCmds || lastCmds.length === 0) { showToast('请先用 AI 生成建筑', 'warn'); return; }
+    var key = document.getElementById('apiKey').value;
+    if (!key) { setStatus('⚠️ 请先填写 API Key', 'status-warn'); return; }
+    var rounds = parseInt(document.getElementById('refineRounds').value, 10) || 1;
+    refining = true;
+    var btn = document.getElementById('refineBtn');
+    btn.disabled = true;
+
+    function round(i) {
+        if (i > rounds) {
+            refining = false;
+            setRefineEnabled();
+            setStatus('✅ 审美迭代完成 (' + rounds + ' 轮)，建筑已达 ' + previewBlocks.length + ' 方块', 'status-ok');
+            saveHistory(document.getElementById('input').value, previewBlocks, previewBlocks.length);
+            return;
+        }
+        startLoading('🎨 第 ' + i + '/' + rounds + ' 轮审美迭代');
+        setStatus('🎨 第 ' + i + ' 轮: AI 正在审视自己的作品...', 'status-warn');
+        var img = '';
+        try { img = document.getElementById('previewCanvas').toDataURL('image/png'); } catch (e) { img = ''; }
+        var url = '/api?action=ai_refine' +
+            '&input=' + encodeURIComponent(document.getElementById('input').value) +
+            '&api_key=' + encodeURIComponent(key) +
+            '&base_url=' + encodeURIComponent(document.getElementById('baseUrl').value) +
+            '&model=' + encodeURIComponent(document.getElementById('modelName').value) +
+            '&cmds=' + encodeURIComponent(JSON.stringify(lastCmds)) +
+            '&image=' + encodeURIComponent(img);
+        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+            stopLoading();
+            if (data.error) {
+                refining = false;
+                setRefineEnabled();
+                setStatus('❌ ' + data.error, 'status-err');
+                return;
+            }
+            var before = previewBlocks.length;
+            lastCmds = data.cmds || lastCmds;
+            previewBlocks = data.blocks || [];
+            renderPreview();
+            if (data.lua) document.getElementById('code').textContent = data.lua;
+            showToast('✅ 第 ' + i + ' 轮: ' + before + ' → ' + (data.count||0) + ' 方块 (' + (data.mode==='vision'?'视觉评审':'文本评审') + ')');
+            setTimeout(function() { round(i + 1); }, 400);
+        }).catch(function() {
+            stopLoading();
+            refining = false;
+            setRefineEnabled();
+            setStatus('❌ 审美迭代请求失败', 'status-err');
+        });
+    }
+    round(1);
+}
+
+function _bpSlug(text) {
+    var t = (text || 'building').replace(/\\s+/g, '_');
+    return t.length > 20 ? t.substring(0, 20) : t;
+}
+function _bpPayload() {
+    if (!previewBlocks || previewBlocks.length === 0) return null;
+    return {
+        v: 1,
+        input: document.getElementById('input').value,
+        cmds: lastCmds,
+        blocks: previewBlocks,
+        count: previewBlocks.length,
+        time: new Date().toISOString()
+    };
+}
+function exportBlueprint() {
+    var data = _bpPayload();
+    if (!data) { showToast('请先生成预览再导出', 'warn'); return; }
+    var blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'blocktown_' + _bpSlug(data.input) + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('✅ 蓝图已导出 (' + data.count + ' 方块)');
+}
+function copyShareLink() {
+    var data = _bpPayload();
+    if (!data) { showToast('请先生成预览', 'warn'); return; }
+    // 优先只带 cmds (可重建且小); 无 cmds 时带 blocks
+    var compact = {i: data.input};
+    if (data.cmds) { compact.c = data.cmds; } else { compact.b = data.blocks; }
+    var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(compact))));
+    var url = location.origin + '/#bp=' + b64;
+    if (url.length > 8000) { showToast('⚠️ 蓝图太大，建议用导出文件分享', 'warn'); return; }
+    navigator.clipboard.writeText(url).then(function() {
+        showToast('✅ 分享链接已复制');
+    }, function() {
+        prompt('复制此链接:', url);
+    });
+}
+function importBlueprint() {
+    var raw = prompt('粘贴蓝图 JSON 或分享链接末尾的 #bp=... 内容:');
+    if (!raw) return;
+    try {
+        if (raw.indexOf('#bp=') >= 0) raw = raw.split('#bp=')[1];
+        raw = raw.trim();
+        var obj;
+        try { obj = JSON.parse(raw); }
+        catch (e) { obj = JSON.parse(decodeURIComponent(escape(atob(raw)))); }
+        applyBlueprint(obj);
+    } catch (e) {
+        showToast('❌ 蓝图解析失败: ' + e.message, 'err');
+    }
+}
+function applyBlueprint(obj) {
+    var input = obj.i || obj.input || '';
+    var cmds = obj.c || obj.cmds || null;
+    var blocks = obj.b || obj.blocks || null;
+    document.getElementById('input').value = input;
+    if (cmds) {
+        // 有 cmds: 走服务端 expand 重建 (保证与生成一致)
+        setStatus('⏳ 正在重建蓝图...', 'status-warn');
+        fetch('/api?action=expand&input=' + encodeURIComponent(input) +
+              '&cmds=' + encodeURIComponent(JSON.stringify(cmds)))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) { setStatus(data.error, 'status-err'); return; }
+                lastCmds = data.cmds || cmds;
+                previewBlocks = data.blocks || [];
+                setRefineEnabled();
+                renderPreview();
+                if (data.lua) document.getElementById('code').textContent = data.lua;
+                setStatus('✅ 蓝图已导入 (' + (data.count||0) + ' 方块)，可继续编辑或安装', 'status-ok');
+            }).catch(function() { setStatus('❌ 蓝图重建请求失败', 'status-err'); });
+    } else if (blocks) {
+        lastCmds = null;
+        previewBlocks = blocks;
+        renderPreview();
+        setStatus('✅ 蓝图已导入 (' + blocks.length + ' 方块)', 'status-ok');
+    } else {
+        showToast('❌ 蓝图缺少方块数据', 'err');
+    }
+}
+function handleBpFile(e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        try { applyBlueprint(JSON.parse(ev.target.result)); }
+        catch (err) { showToast('❌ 文件不是有效蓝图', 'err'); }
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+}
+// 本地蓝图库
+function loadBpList() {
+    var list = JSON.parse(localStorage.getItem('lb_blueprints') || '[]');
+    var el = document.getElementById('bpList');
+    if (!el) return;
+    el.innerHTML = '';
+    if (list.length === 0) {
+        el.innerHTML = '<div style="color:var(--text-dim); font-size:13px; padding:6px;">还没有保存的蓝图。生成建筑后点「保存当前建筑」。</div>';
+        return;
+    }
+    list.forEach(function(bp, idx) {
+        var item = document.createElement('div');
+        item.className = 'history-item';
+        item.innerHTML = '<span class="history-time">' + (bp.date||'') + '</span>' +
+            '<span class="history-text">' + bp.name + '</span>' +
+            '<span class="history-count">' + (bp.count||0) + ' blocks</span>';
+        item.onclick = function() { applyBlueprint(bp.data); };
+        var del = document.createElement('span');
+        del.textContent = ' ✕';
+        del.style.color = '#ff5555';
+        del.style.cursor = 'pointer';
+        del.onclick = function(ev) {
+            ev.stopPropagation();
+            list.splice(idx, 1);
+            localStorage.setItem('lb_blueprints', JSON.stringify(list));
+            loadBpList();
+        };
+        item.appendChild(del);
+        el.appendChild(item);
+    });
+}
+function saveBlueprintDialog() {
+    var data = _bpPayload();
+    if (!data) { showToast('请先生成预览', 'warn'); return; }
+    var name = prompt('蓝图名称:', data.input || '我的建筑');
+    if (!name) return;
+    var list = JSON.parse(localStorage.getItem('lb_blueprints') || '[]');
+    list.unshift({name: name, date: new Date().toLocaleDateString(), count: data.count, data: data});
+    if (list.length > 30) list.pop();
+    localStorage.setItem('lb_blueprints', JSON.stringify(list));
+    loadBpList();
+    showToast('✅ 已保存到蓝图库');
+}
+
 // 拖拽 + 滚轮缩放
 document.addEventListener('DOMContentLoaded', function() {
     var canvas = document.getElementById('previewCanvas');
@@ -1180,6 +1433,17 @@ fetch('/api?action=worlds').then(function(r) { return r.json(); }).then(function
 loadAIConfig();
 loadHistory();
 loadChatState();
+loadBpList();
+// 分享链接导入: #bp=<base64>
+(function() {
+    var h = location.hash || '';
+    if (h.indexOf('#bp=') === 0) {
+        try {
+            var obj = JSON.parse(decodeURIComponent(escape(atob(h.substring(4)))));
+            setTimeout(function() { applyBlueprint(obj); }, 300);
+        } catch (e) { showToast('分享链接解析失败', 'err'); }
+    }
+})();
 document.getElementById('input').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -1204,7 +1468,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab-panel').forEach(function(p) {
         p.classList.toggle('active', p.id === 'tab-' + tab);
     });
-    if (tab === 'town') { loadTownNpcs(); }
+    if (tab === 'town') { loadTownNpcs(); renderRelations(); }
 }
 
 var townNpcs = [];
@@ -1304,6 +1568,121 @@ function townSend() {
 
 function townChatEnter(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); townSend(); }
+}
+
+// ===== 小镇日报 (NPC 日记) =====
+var diaryLoading = false;
+function loadTownDiary() {
+    if (diaryLoading) return;
+    diaryLoading = true;
+    var grid = document.getElementById('diaryGrid');
+    var st = document.getElementById('diaryStatus');
+    st.textContent = '⏳ AI 正在为 6 位 NPC 写日记...';
+    grid.innerHTML = '';
+    for (var i = 0; i < 6; i++) {
+        var ph = document.createElement('div');
+        ph.className = 'npc-card';
+        ph.innerHTML = '<div class="npc-emoji">✍️</div><div class="npc-role">写作中...</div>';
+        grid.appendChild(ph);
+    }
+    var weather = document.getElementById('npcWeather') ? document.getElementById('npcWeather').value : 'clear';
+    fetch('/api?action=town_diary&weather=' + weather).then(function(r) { return r.json(); }).then(function(data) {
+        diaryLoading = false;
+        if (data.error) {
+            st.textContent = '❌ ' + data.error;
+            grid.innerHTML = '<div style="color:var(--text-dim); font-size:13px;">' + data.error + '</div>';
+            return;
+        }
+        grid.innerHTML = '';
+        var okCount = 0;
+        (data.diaries || []).forEach(function(d) {
+            var card = document.createElement('div');
+            card.className = 'npc-card';
+            card.style.borderColor = d.color;
+            card.style.cursor = 'default';
+            if (d.diary) {
+                okCount++;
+                card.innerHTML = '<div class="npc-emoji">' + d.emoji + '</div>' +
+                    '<div class="npc-name" style="color:' + d.color + '; font-size:15px;">' + d.display + '</div>' +
+                    '<div style="font-size:13px; line-height:1.6; color:var(--text); margin-top:6px;">' + d.diary + '</div>';
+            } else {
+                card.innerHTML = '<div class="npc-emoji">' + d.emoji + '</div>' +
+                    '<div class="npc-name" style="color:' + d.color + '; font-size:15px;">' + d.display + '</div>' +
+                    '<div style="font-size:12px; color:#ff8888; margin-top:6px;">⚠️ ' + (d.err || '生成失败') + '</div>';
+            }
+            grid.appendChild(card);
+        });
+        st.textContent = okCount > 0 ? ('✅ ' + okCount + '/6 篇日记已生成') : '❌ 全部生成失败 (检查 STEPFUN_API_KEY)';
+        if (okCount > 0) showToast('📖 今日日报已生成 (' + okCount + '/6)');
+    }).catch(function() {
+        diaryLoading = false;
+        st.textContent = '❌ 请求失败';
+    });
+}
+
+// ===== NPC 关系图谱 (圆形布局 + 加权边) =====
+function renderRelations() {
+    var canvas = document.getElementById('relationCanvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width, h = canvas.height;
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, w, h);
+
+    fetch('/api?action=town_relations').then(function(r) { return r.json(); }).then(function(data) {
+        var nodes = data.nodes || [];
+        var edges = data.edges || [];
+        if (nodes.length === 0) { ctx.fillStyle = '#6272a4'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('无数据', w/2, h/2); return; }
+
+        var cx = w/2, cy = h/2 + 6;
+        var radius = Math.min(w, h)/2 - 52;
+        var posMap = {};
+        nodes.forEach(function(n, i) {
+            var angle = -Math.PI/2 + i * 2*Math.PI/nodes.length;
+            posMap[n.name] = { x: cx + radius*Math.cos(angle), y: cy + radius*Math.sin(angle) };
+        });
+
+        // 边: 宽度/透明度按好感度
+        edges.forEach(function(e) {
+            var a = posMap[e.a], b = posMap[e.b];
+            if (!a || !b) return;
+            var t = Math.max(0, Math.min(1, (e.score - 30) / 50));  // 30-80 → 0-1
+            ctx.strokeStyle = 'rgba(80,250,123,' + (0.18 + t*0.65).toFixed(2) + ')';
+            ctx.lineWidth = 1 + t*5;
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+            // 边上分数
+            var mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+            ctx.fillStyle = 'rgba(139,233,253,0.85)';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(e.score, mx, my - 4);
+        });
+
+        // 节点
+        nodes.forEach(function(n) {
+            var p = posMap[n.name];
+            // 头像底
+            ctx.fillStyle = n.color;
+            ctx.globalAlpha = 0.25;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 26, 0, 2*Math.PI); ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = n.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 26, 0, 2*Math.PI); ctx.stroke();
+            // emoji + 名字
+            ctx.font = '20px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(n.emoji, p.x, p.y + 7);
+            ctx.fillStyle = n.color;
+            ctx.font = '600 12px sans-serif';
+            ctx.fillText(n.display, p.x, p.y + 44);
+        });
+    }).catch(function() {
+        ctx.fillStyle = '#ff5555';
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('图谱加载失败', w/2, h/2);
+    });
 }
 </script>
 </body>
