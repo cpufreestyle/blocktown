@@ -517,6 +517,16 @@ td { color:var(--text-dim); }
 </div>
 
 <div class="card">
+<label>🏗️ 建造挑战 (NPC 出资委托，游戏内自动验收)</label>
+<div id="buildQuestBox" style="color:var(--text-dim); font-size:13px;">加载中…</div>
+<div class="btn-row" style="margin-top:8px;">
+<button class="btn-ai btn-sm" onclick="loadBuildQuest()">🔄 刷新任务</button>
+<button class="btn-parse btn-sm" onclick="acceptBuildQuest()">🔨 接受挑战 (去建造)</button>
+<span style="font-size:12px; color:var(--text-dim);">在广场 30 格内建造，游戏每分钟自动验收，达标全镇声望+15</span>
+</div>
+</div>
+
+<div class="card">
 <label>📖 小镇日报 (AI 生成各 NPC 第一人称日记)</label>
 <div class="btn-row" style="margin-bottom:10px;">
 <button class="btn-ai btn-sm" onclick="loadTownDiary()">📝 生成今日日报</button>
@@ -1468,7 +1478,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab-panel').forEach(function(p) {
         p.classList.toggle('active', p.id === 'tab-' + tab);
     });
-    if (tab === 'town') { loadTownNpcs(); renderRelations(); }
+    if (tab === 'town') { loadTownNpcs(); renderRelations(); loadBuildQuest(); }
 }
 
 var townNpcs = [];
@@ -1568,6 +1578,32 @@ function townSend() {
 
 function townChatEnter(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); townSend(); }
+}
+
+// ===== 建造挑战 (Server 持有任务, 游戏内自动验收) =====
+var currentBuildQuest = null;
+function loadBuildQuest() {
+    var box = document.getElementById('buildQuestBox');
+    fetch('/api?action=town_buildquest').then(function(r) { return r.json(); }).then(function(q) {
+        if (q.error || !q.id) { box.innerHTML = '暂无任务'; return; }
+        currentBuildQuest = q;
+        var req = (q.requirements || []).map(function(r) { return r.label + '×' + r.count; }).join(' + ');
+        box.innerHTML = '<div style="display:flex; align-items:center; gap:10px;">'
+            + '<span style="font-size:28px;">' + q.emoji + '</span>'
+            + '<div><b style="color:var(--text);">' + q.patron.emoji + ' ' + q.patron.display
+            + ' 出资: ' + q.title + '</b><br>'
+            + '<span style="font-size:12px;">' + q.prompt_hint + '</span><br>'
+            + '<span style="font-size:12px; color:var(--accent);">需要: ' + req
+            + ' · 奖励: 全镇声望+' + q.reward_reputation + '</span></div></div>';
+    }).catch(function() { box.innerHTML = '加载失败 (Web 服务未启动?)'; });
+}
+function acceptBuildQuest() {
+    if (!currentBuildQuest) { showToast('先刷新任务', 'err'); return; }
+    var el = document.getElementById('input');
+    el.value = currentBuildQuest.prompt_hint;
+    switchTab('builder');
+    showToast('已填入「' + currentBuildQuest.title + '」需求，去 AI 生成并安装吧');
+    // 游戏内 /buildquest 可随时查看验收进度
 }
 
 // ===== 小镇日报 (NPC 日记) =====
