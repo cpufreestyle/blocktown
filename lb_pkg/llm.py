@@ -124,26 +124,12 @@ BLOCK_TYPE_TO_COLOR = {
     "tree": "#5d4037", "water": "#2980b9",
 }
 
-def call_llm(api_key, base_url, model, user_input):
-    """调用 LLM API 生成建筑方块列表 (使用 subprocess curl 避免超时)"""
-    # 缓存检查
-    ck = _cache_key(api_key, base_url, model, user_input)
-    cached = get_cached(ck)
-    if cached:
-        return cached
+def _post_chat(model, api_key, base_url, messages, max_tokens=4096, temperature=0.7):
+    """公共 LLM 请求: subprocess curl + 超时/网络错误重试一次; API 错误直接抛出"""
     import subprocess
     url = base_url.rstrip("/") + "/chat/completions"
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": LLM_SYSTEM_PROMPT},
-            {"role": "user", "content": user_input},
-        ],
-        "temperature": 0.7,
-        "max_tokens": 4096,
-        "stream": False,
-    }
-
+    payload = {"model": model, "messages": messages,
+               "temperature": temperature, "max_tokens": max_tokens, "stream": False}
     payload_str = json.dumps(payload, ensure_ascii=False)
     curl_cmd = [
         "curl", "-s", "-X", "POST", url,
@@ -153,8 +139,6 @@ def call_llm(api_key, base_url, model, user_input):
         "--connect-timeout", "10",
         "--max-time", "180",
     ]
-
-    # 超时/网络错误重试一次; API 错误 (鉴权/额度) 不重试
     last_err = None
     for attempt in range(2):
         try:
@@ -165,9 +149,7 @@ def call_llm(api_key, base_url, model, user_input):
             if "error" in resp:
                 err = resp["error"]
                 raise RuntimeError(f"API 错误: {err.get('message', str(err))[:200]}")
-            content = resp["choices"][0]["message"]["content"]
-            set_cached(ck, content)
-            return content
+            return resp["choices"][0]["message"]["content"]
         except subprocess.TimeoutExpired:
             last_err = Exception("API 调用超时 (200秒)，请尝试更简单的描述或换更快的模型")
         except (ConnectionError, json.JSONDecodeError) as e:
@@ -175,6 +157,21 @@ def call_llm(api_key, base_url, model, user_input):
         except RuntimeError:
             raise  # API 错误直接抛出
     raise last_err
+
+def call_llm(api_key, base_url, model, user_input):
+    """调用 LLM API 生成建筑方块列表 (缓存 + curl)"""
+    # 缓存检查
+    ck = _cache_key(api_key, base_url, model, user_input)
+    cached = get_cached(ck)
+    if cached:
+        return cached
+    messages = [
+        {"role": "system", "content": LLM_SYSTEM_PROMPT},
+        {"role": "user", "content": user_input},
+    ]
+    content = _post_chat(model, api_key, base_url, messages)
+    set_cached(ck, content)
+    return content
 
 CHAT_ITERATE_RULES = """
 
@@ -188,7 +185,6 @@ MAX_HISTORY_TURNS = 8
 
 def call_llm_chat(api_key, base_url, model, user_input, history=None, current_cmds=None):
     """对话式迭代建造: 基于历史对话与当前建筑 cmds 增量修改"""
-    import subprocess
     messages = [{"role": "system", "content": LLM_SYSTEM_PROMPT + CHAT_ITERATE_RULES}]
     if current_cmds:
         cmds_preview = json.dumps(list(current_cmds)[:120], ensure_ascii=False)
@@ -206,38 +202,55 @@ def call_llm_chat(api_key, base_url, model, user_input, history=None, current_cm
     if cached:
         return cached
 
-    url = base_url.rstrip("/") + "/chat/completions"
-    payload = {"model": model, "messages": messages,
-               "temperature": 0.7, "max_tokens": 4096, "stream": False}
-    payload_str = json.dumps(payload, ensure_ascii=False)
-    curl_cmd = [
-        "curl", "-s", "-X", "POST", url,
-        "-H", "Content-Type: application/json",
-        "-H", f"Authorization: Bearer {api_key}",
-        "-d", payload_str,
-        "--connect-timeout", "10",
-        "--max-time", "180",
-    ]
-    last_err = None
-    for attempt in range(2):
+    content = _post_chat(model, api_key, base_url, messages)
+    set_cached(ck, content)
+    return content
+
+REFINE_SYSTEM_PROMPT = """你是世界顶级建筑评审 + 建筑大师。审视给定的 voxel 建筑 cmds，从以下维度找问题并改进:
+1. 对称性 (建筑应关于 x/z 轴对称)
+2. 层次感 (每层 2-3 格高、颜色交替、屋顶比主体宽 1-2 格)
+3. 色彩 (基调 gray/stone + 白色边框 + 黄/橙屋顶 + glow 灯光点缀)
+4. 细节 (窗户/柱子/屋檐/旗帜/灯笼是否充分)
+5. 轮廓 (顶部是否单调，需要 dome/cone/roof 变化)
+只输出改进后的完整 cmds JSON ({"cmds":[...]})，格式与输入一致。保持原建筑识别度，只做优化。
+
+形状命令与颜色规格同前: box/solid/cyl/cone/sphere/dome/ring/pyramid/arch/stairs/spiral/line/hline/vline/floor/wall/cross/taper/fence/cornice/roof/window/column/beam/flag/gate/balcony; 17色 brick_*。坐标 x,z∈[-20,20], y∈[1,50], 整数, ≤120 条命令。只输出纯 JSON。"""
+
+def call_llm_refine(api_key, base_url, model, user_input, cmds, image_data_url=None):
+    """AI 审美迭代: 审视当前建筑 (可选附预览截图) 并输出改进后的 cmds
+
+    带图片请求失败时自动降级为纯文本批评 (无视觉模型场景)。
+    Returns: (new_cmds, note)  note 描述是否使用了视觉
+    """
+    cmds_preview = json.dumps(list(cmds)[:120], ensure_ascii=False)
+    text = (f"原始需求: {user_input}\n\n当前建筑的 cmds:\n{{\"cmds\":{cmds_preview}}}\n\n"
+            "请评审并输出改进后的完整 cmds JSON。")
+
+    if image_data_url:
+        messages = [
+            {"role": "system", "content": REFINE_SYSTEM_PROMPT},
+            {"role": "user", "content": [
+                {"type": "text", "text": text + "\n附图为该建筑的 3D 预览截图，请结合视觉观感评审。"},
+                {"type": "image_url", "image_url": {"url": image_data_url}},
+            ]},
+        ]
         try:
-            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=200)
-            if result.returncode != 0:
-                raise ConnectionError(f"curl 错误: {result.stderr[:200]}")
-            resp = json.loads(result.stdout)
-            if "error" in resp:
-                err = resp["error"]
-                raise RuntimeError(f"API 错误: {err.get('message', str(err))[:200]}")
-            content = resp["choices"][0]["message"]["content"]
-            set_cached(ck, content)
-            return content
-        except subprocess.TimeoutExpired:
-            last_err = Exception("API 调用超时 (200秒)，请尝试更简单的描述或换更快的模型")
-        except (ConnectionError, json.JSONDecodeError) as e:
-            last_err = Exception(f"网络/响应错误: {e}")
+            content = _post_chat(model, api_key, base_url, messages, temperature=0.6)
+            new_cmds = parse_llm_json(content)
+            if new_cmds:
+                return (new_cmds if isinstance(new_cmds, list) else new_cmds.get("cmds", []), "vision")
         except RuntimeError:
-            raise
-    raise last_err
+            pass  # 视觉不支持/图片过大 → 降级纯文本
+
+    messages = [
+        {"role": "system", "content": REFINE_SYSTEM_PROMPT},
+        {"role": "user", "content": text},
+    ]
+    content = _post_chat(model, api_key, base_url, messages, temperature=0.6)
+    new_cmds = parse_llm_json(content)
+    if not new_cmds:
+        raise ValueError("AI 返回无法解析为 cmds")
+    return (new_cmds if isinstance(new_cmds, list) else new_cmds.get("cmds", []), "text")
 
 def parse_llm_json(content):
     """从 LLM 回复中提取命令列表"""
