@@ -1,6 +1,6 @@
 """Luanti Builder - preview 模块。"""
 import math
-import random
+import secrets
 
 # ============================================================
 # 预览方块生成
@@ -186,11 +186,12 @@ def gen_preview_blocks(params):
                 for z in range(-r, r+1):
                     if x*x+y*y+z*z <= r*r:
                         blocks.append({"x": x, "y": 4*s+1+y, "z": z, "color": COLOR_HEX["leaves"]})
-        # 花朵
+        # 花朵 (位置随机铺撒，用安全随机源)
         flower_colors = ["#e74c3c","#f1c40f","#9b59b6","#e67e22"]
+        span = 2 * w - 1  # 覆盖 [-w+1, w-1]
         for i in range(10*s):
-            fx = random.randint(-w+1, w-1)
-            fz = random.randint(-w+1, w-1)
+            fx = secrets.randbelow(span) - (w - 1)
+            fz = secrets.randbelow(span) - (w - 1)
             blocks.append({"x": fx, "y": 1, "z": fz, "color": flower_colors[i % 4]})
     elif btype == "temple":
         w = 8 * s; h = 6 * s
