@@ -23,31 +23,37 @@ local NPC_TYPES = {
      system_prompt="你是面包师老王，乐高小镇面包店老板。热情开朗，爱聊烘焙。回复简短(50字内)，中文。",
      work_pos={x=-9,y=1,z=-4}, home_pos={x=-6,y=1,z=4}, walk_pos={x=0,y=1,z=0},
      quest_item="default:apple", quest_count=5, quest_desc="帮我收集5个苹果做苹果派",
+     liked_item="my_first_mod:bread", liked_desc="面包",
      shop={{"my_first_mod:bread","面包",2},{"my_first_mod:apple","苹果",1}}},
     {name="scholar", display="学者李书生", color="#87CEEB",
-     system_prompt="你是学者李书生，住图书馆旁。博学多才，说话文绉绉。回复简短(50字内)，中文带文言。",
+     system_prompt="你是学者李书生，住图书馆旁。博学多才，说话文绉绉，爱引古诗词。回复简短(50字内)，中文带文言。",
      work_pos={x=9,y=1,z=-4}, home_pos={x=-10,y=1,z=4}, walk_pos={x=0,y=1,z=-2},
      quest_item="default:book", quest_count=1, quest_desc="我丢了本书，帮我找找",
+     liked_item="my_first_mod:brick_cyan", liked_desc="青色积木(墨色)",
      shop={}},
     {name="merchant", display="商人钱掌柜", color="#FF6347",
      system_prompt="你是商人钱掌柜，市场摆摊。精明诚信，爱推销。回复简短(50字内)，中文。",
      work_pos={x=8,y=1,z=4}, home_pos={x=-4,y=1,z=4}, walk_pos={x=3,y=1,z=-3},
      quest_item="my_first_mod:brick_glow", quest_count=3, quest_desc="找3个发光积木有大客户要",
+     liked_item="default:gold_ingot", liked_desc="金锭",
      shop={{"my_first_mod:brick_red","红积木",1},{"my_first_mod:brick_glow","发光积木",3},{"my_first_mod:brick_wand","魔杖",5}}},
     {name="guard", display="守卫赵铁柱", color="#90EE90",
      system_prompt="你是守卫赵铁柱，负责小镇安全。正直严肃。回复简短(40字内)，中文军人风格。",
      work_pos={x=0,y=1,z=-10}, home_pos={x=10,y=1,z=4}, walk_pos={x=0,y=1,z=-4},
      quest_item="my_first_mod:brick_gray", quest_count=4, quest_desc="收集4个灰色积木修城墙",
+     liked_item="my_first_mod:bread", liked_desc="面包(巡逻干粮)",
      shop={}},
     {name="healer", display="医者孙灵儿", color="#DDA0DD",
-     system_prompt="你是医者孙灵儿，药铺工作。温柔善良，擅草药。回复简短(50字内)，中文温柔语气。",
+     system_prompt="你是医者孙灵儿，药铺工作。温柔善良，擅草药，会关心人。回复简短(50字内)，中文温柔语气。",
      work_pos={x=-10,y=1,z=0}, home_pos={x=-6,y=1,z=4}, walk_pos={x=-2,y=1,z=3},
      quest_item="flowers:rose", quest_count=3, quest_desc="采3朵玫瑰花做药引",
+     liked_item="my_first_mod:apple", liked_desc="苹果(入药)",
      shop={{"my_first_mod:bread","养生面包",3}}},
     {name="fisher", display="渔夫周三", color="#F0E68C",
-     system_prompt="你是渔夫周三，南门外河边钓鱼。豪爽爱讲故事。回复简短(50字内)，中文带江湖气。",
+     system_prompt="你是渔夫周三，南门外河边钓鱼。豪爽直率，爱讲故事。回复简短(50字内)，中文带江湖气。",
      work_pos={x=0,y=1,z=10}, home_pos={x=6,y=1,z=4}, walk_pos={x=2,y=1,z=5},
      quest_item="default:clay_lump", quest_count=3, quest_desc="找3个黏土做鱼竿支架",
+     liked_item="my_first_mod:brick_glow", liked_desc="发光积木(夜钓浮漂)",
      shop={}},
 }
 
@@ -63,9 +69,62 @@ local npc_plans = {}          -- 每日计划 (参照论文 Planning 模块)
 local active_dialog = {}
 local town_center = nil
 local player_coins = {}
+local player_reputation = {}  -- 玩家声誉 0-100 (50 起始)
 local weather = "clear"
 local weather_timer = 0
 local npc_chat_timer = 0
+
+-- ============================================================
+-- 小镇事件系统 (随机事件驱动全体 NPC)
+-- ============================================================
+local TOWN_EVENTS = {
+    {id="market_fair", name="集市", announce="🎉 集市开张了！商人钱掌柜在广场支起了摊位",
+     mood_delta=5, memory="镇上今天举办集市，热闹极了"},
+    {id="lost_traveler", name="迷路旅人", announce="🧳 一位迷路的旅人进城了，守卫赵铁柱正在询问来意",
+     mood_delta=2, memory="今天有位迷路旅人进城，大家议论纷纷"},
+    {id="harvest_day", name="丰收日", announce="🌾 今天是丰收日，面包师老王烤了好多新面包",
+     mood_delta=6, memory="今天是丰收日，收成很好"},
+    {id="night_patrol", name="夜间巡逻", announce="🌙 守卫赵铁柱开始夜间巡逻，大家早点回家",
+     mood_delta=-2, memory="今晚有夜间巡逻，小镇戒备森严"},
+    {id="story_night", name="故事会", announce="📖 故事会开始！渔夫周三在河边讲起江湖传闻",
+     mood_delta=4, memory="今晚河边有故事会，很多人去听"},
+}
+local current_event = nil    -- {id=.., name=..}
+local event_timer = 0
+local EVENT_INTERVAL_MIN = 180  -- 秒
+local EVENT_INTERVAL_MAX = 300
+
+local function reputation_str(rep)
+    if rep >= 85 then return "德高望重" end
+    if rep >= 70 then return "乐善好施" end
+    if rep >= 30 then return "普通镇民" end
+    return "恶名昭著"
+end
+
+local function add_reputation(pname, delta)
+    local old = player_reputation[pname] or 50
+    local new = math.max(0, math.min(100, old + delta))
+    player_reputation[pname] = new
+    -- 跨越阈值时全服广播
+    if old < 70 and new >= 70 then
+        minetest.chat_send_all("§d[小镇] " .. pname .. " 在镇上声望渐高，成了乐善好施的好人！")
+    elseif old >= 30 and new < 30 then
+        minetest.chat_send_all("§d[小镇] " .. pname .. " 声名狼藉，镇民都开始躲着他走…")
+    end
+end
+
+local function trigger_event()
+    local ev = TOWN_EVENTS[math.random(#TOWN_EVENTS)]
+    current_event = {id=ev.id, name=ev.name}
+    for _, nd in ipairs(NPC_TYPES) do
+        npc_mood[nd.name] = math.max(10, math.min(100, (npc_mood[nd.name] or 50) + ev.mood_delta))
+        add_memory(nd.name, ev.memory, 3)
+    end
+    for _, p in ipairs(minetest.get_connected_players()) do
+        minetest.chat_send_player(p:get_player_name(), "§e[小镇事件] " .. ev.announce)
+    end
+    return ev
+end
 
 -- ============================================================
 -- 记忆系统 (参照 Generative Agents 论文: recency + importance + relevance)
@@ -197,7 +256,16 @@ end
 local function call_ai(pname, system_prompt, history, user_message, mood, relation, mem_ctx, callback)
     local mood_str = mood > 75 and "开心" or (mood > 50 and "愉快" or (mood > 25 and "一般" or "不悦"))
     local rel_str = relation > 75 and "挚友" or (relation > 50 and "朋友" or (relation > 25 and "熟人" or "陌生人"))
-    local full_prompt = system_prompt .. "\n心情:" .. mood_str .. " 关系:" .. rel_str .. " 天气:" .. weather .. "。\n"
+    local full_prompt = system_prompt .. "\n心情:" .. mood_str .. " 关系:" .. rel_str .. " 天气:" .. weather .. "。"
+    -- 玩家声誉 + 小镇事件 注入
+    if pname and pname ~= "NPC" then
+        local rep = player_reputation[pname] or 50
+        full_prompt = full_prompt .. "\n这位玩家的镇上声望: " .. rep .. "(" .. reputation_str(rep) .. ")"
+    end
+    if current_event then
+        full_prompt = full_prompt .. "\n当前小镇事件: " .. current_event.name
+    end
+    full_prompt = full_prompt .. "\n"
     if mem_ctx and mem_ctx ~= "" then full_prompt = full_prompt .. mem_ctx end
 
     local messages = {{role="system", content=full_prompt}}
@@ -345,7 +413,8 @@ for _, npc_def in ipairs(NPC_TYPES) do
                 npc_mood[self._npc_type] = math.max(0, (npc_mood[self._npc_type] or 50) - 15)
                 npc_relation[self._npc_type] = math.max(0, (npc_relation[self._npc_type] or 50) - 10)
                 add_memory(self._npc_type, "被玩家打了", 4)
-                minetest.chat_send_player(pname, "§c" .. self._npc_def.display .. ": 别打我！(好感-10)")
+                add_reputation(pname, -5)
+                minetest.chat_send_player(pname, "§c" .. self._npc_def.display .. ": 别打我！(好感-10 声望-5)")
             end
         end,
 
@@ -474,28 +543,42 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         if not nd then return end
         local inv = player:get_inventory()
         local task = npc_tasks[npc_type]
+        -- 档1: 任务物品 (原有逻辑 + 声誉)
         if task and task.given and not task.completed and inv:contains_item("main", nd.quest_item .. " " .. nd.quest_count) then
             inv:remove_item("main", nd.quest_item .. " " .. nd.quest_count)
             task.completed = true
             npc_relation[npc_type] = math.min(100, (npc_relation[npc_type] or 50) + 20)
             npc_mood[npc_type] = math.min(100, (npc_mood[npc_type] or 50) + 30)
             add_memory(npc_type, "玩家帮我完成任务了！", 5)
-            minetest.chat_send_player(pname, "§a[" .. nd.display .. "] 太好了！好感+20 情绪+30")
+            add_reputation(pname, 5)
+            minetest.chat_send_player(pname, "§a[" .. nd.display .. "] 太好了！好感+20 情绪+30 声望+5")
             minetest.chat_send_player(pname, "§a奖励: 面包x5 发光积木x4 金锭x2")
             inv:add_item("main", "my_first_mod:bread 5")
             inv:add_item("main", "my_first_mod:brick_glow 4")
             inv:add_item("main", "default:gold_ingot 2")
             player_coins[pname] = (player_coins[pname] or 0) + 2
             spawn_particles(player:get_pos(), "sparkle")
+        -- 档2: NPC 最爱物品
+        elseif nd.liked_item and inv:contains_item("main", nd.liked_item) then
+            inv:remove_item("main", nd.liked_item .. " 1")
+            npc_relation[npc_type] = math.min(100, (npc_relation[npc_type] or 50) + 8)
+            npc_mood[npc_type] = math.min(100, (npc_mood[npc_type] or 50) + 12)
+            add_memory(npc_type, "玩家送了我最爱的" .. (nd.liked_desc or "礼物") .. "！", 4)
+            add_reputation(pname, 2)
+            minetest.chat_send_player(pname, "§a[" .. nd.display .. "] 这正是我最想要的" .. (nd.liked_desc or "") .. "！好感+8 情绪+12 声望+2")
+            spawn_particles(player:get_pos(), "hearts")
+        -- 档3: 泛用礼物 (面包)
         elseif inv:contains_item("main", "my_first_mod:bread") then
             inv:remove_item("main", "my_first_mod:bread")
-            npc_relation[npc_type] = math.min(100, (npc_relation[npc_type] or 50) + 5)
-            npc_mood[npc_type] = math.min(100, (npc_mood[npc_type] or 50) + 10)
+            npc_relation[npc_type] = math.min(100, (npc_relation[npc_type] or 50) + 3)
+            npc_mood[npc_type] = math.min(100, (npc_mood[npc_type] or 50) + 6)
             add_memory(npc_type, "玩家送了我面包", 3)
-            minetest.chat_send_player(pname, "§a[" .. nd.display .. "] 谢谢面包！好感+5")
+            add_reputation(pname, 2)
+            minetest.chat_send_player(pname, "§a[" .. nd.display .. "] 谢谢面包！好感+3")
             spawn_particles(player:get_pos(), "hearts")
         else
-            minetest.chat_send_player(pname, "§7[" .. nd.display .. "] 没有合适的礼物 (需要:" .. nd.quest_item .. ")")
+            local hint = nd.liked_item and (" 最爱:" .. (nd.liked_desc or nd.liked_item)) or ""
+            minetest.chat_send_player(pname, "§7[" .. nd.display .. "] 没有合适的礼物。" .. hint .. " (任务:" .. nd.quest_item .. " x" .. nd.quest_count .. ")")
         end return
     end
 
@@ -620,6 +703,15 @@ minetest.register_globalstep(function(dtime)
             local n1 = NPC_TYPES[math.random(#NPC_TYPES)].name
             local n2 = NPC_TYPES[math.random(#NPC_TYPES)].name
             if n1 ~= n2 then npc_talk_to_npc(n1, n2) end
+        end
+    end
+
+    -- 小镇事件: 3-5 分钟随机触发
+    if town_center and #minetest.get_connected_players() > 0 then
+        event_timer = event_timer + dtime
+        if event_timer > math.random(EVENT_INTERVAL_MIN, EVENT_INTERVAL_MAX) then
+            event_timer = 0
+            trigger_event()
         end
     end
 
@@ -882,13 +974,32 @@ minetest.register_chatcommand("ai_mem", {description="查看NPC记忆", params="
         return true
     end})
 
+minetest.register_chatcommand("event", {description="查看/触发小镇事件", params="[trigger]",
+    func = function(name, param)
+        if (param or ""):trim() == "trigger" then
+            local ev = trigger_event()
+            return true, "已触发事件: " .. ev.name
+        end
+        if current_event then
+            return true, "当前事件: " .. current_event.name .. " (手动触发: /event trigger)"
+        end
+        return true, "当前无事件，等下一次随机触发 (手动: /event trigger)"
+    end})
+
+minetest.register_chatcommand("reputation", {description="查看你的镇上声望",
+    func = function(name, param)
+        local rep = player_reputation[name] or 50
+        return true, "你的声望: " .. rep .. "/100 (" .. reputation_str(rep) .. ") — 送礼+2 完成任务+5 打NPC-5"
+    end})
+
 minetest.register_on_joinplayer(function(player)
     local name = player:get_player_name()
     if not player_coins[name] then player_coins[name] = 0 end
+    if not player_reputation[name] then player_reputation[name] = 50 end
     minetest.after(2, function()
         minetest.chat_send_player(name, "§e=== AI 小镇 v6 ===")
         minetest.chat_send_player(name, "§7/town 生成 | /ai_npc 状态 | /weather 天气 | /ai_mem <npc> 记忆")
-        minetest.chat_send_player(name, "§7右键NPC对话 → 发送后直接在聊天框继续输入")
+        minetest.chat_send_player(name, "§7/event 事件 | /reputation 声望 | 右键NPC对话/送礼")
     end)
 end)
 
