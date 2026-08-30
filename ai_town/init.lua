@@ -215,6 +215,106 @@ local function trigger_reflection(npc_name)
 end
 
 -- ============================================================
+-- 建筑挑战 (Server 持有任务列表, Lua 拉取 spec + 游戏内自动验收)
+-- ============================================================
+local WEB_SERVER = "http://127.0.0.1:8765"
+local build_quest = nil        -- 当前任务 spec (来自 server /town_buildquest)
+local quest_done_sent = false  -- 防重复上报
+
+local function fetch_build_quest()
+    if not HTTP_API then return end
+    HTTP_API:fetch({url = WEB_SERVER .. "/api?action=town_buildquest", method="GET", timeout=10}, function(result)
+        if result.code ~= 200 then return end
+        local data = minetest.parse_json(result.data)
+        if data and data.id and data.requirements then
+            if not build_quest or build_quest.id ~= data.id then
+                build_quest = data
+                quest_done_sent = false
+                minetest.chat_send_all("§b[建造挑战] " .. data.emoji .. " " .. data.patron.display
+                    .. " 想要一座" .. data.title .. "! " .. data.prompt_hint)
+            end
+        end
+    end)
+end
+
+local function report_quest_done()
+    if not HTTP_API or quest_done_sent then return end
+    quest_done_sent = true
+    HTTP_API:fetch({url = WEB_SERVER .. "/api?action=town_buildquest_done", method="GET", timeout=10}, function(result)
+        if result.code == 200 then
+            local data = minetest.parse_json(result.data)
+            if data and data.next then
+                build_quest = data.next
+                minetest.chat_send_all("§b[建造挑战] 新挑战来了: " .. data.next.emoji .. " " .. data.next.title)
+            end
+        end
+    end)
+end
+
+-- 验收: 以 town_center 为中心半径 30 内数要求的节点
+local function check_build_quest()
+    if not build_quest or quest_done_sent or not town_center then return end
+    local minp = vector.subtract(town_center, 30)
+    local maxp = vector.add(town_center, 30)
+    for _, r in ipairs(build_quest.requirements) do
+        local found = select(1, minetest.find_nodes_in_area(minp, maxp, r.node))
+        if #found < r.count then return end -- 任一要求未达标即失败
+    end
+    -- 全部达标: 发放奖励
+    local patron_nd = nil
+    for _, nd in ipairs(NPC_TYPES) do if nd.name == build_quest.patron.name then patron_nd = nd break end end
+    minetest.chat_send_all("§b[建造挑战] " .. build_quest.emoji .. " " .. build_quest.title
+        .. " 建成! 全镇欢呼~ (" .. build_quest.patron.display .. " 出资)")
+    for _, p in ipairs(minetest.get_connected_players()) do
+        add_reputation(p:get_player_name(), build_quest.reward_reputation or 15)
+    end
+    if patron_nd then
+        add_memory(patron_nd.name, "有玩家完成了" .. build_quest.title .. "的建造, 我非常满意", 5)
+        local display = build_quest.patron.display
+        call_ai("NPC", patron_nd.system_prompt, {}, "玩家们刚刚完成了你要的" .. build_quest.title .. ", 请向全镇表示感谢(30字内)",
+            (npc_mood[patron_nd.name] or 50), 60, get_memory_context(patron_nd.name, build_quest.title), function(reply, err)
+            if reply then minetest.chat_send_all("§7[" .. display .. "] " .. reply) end
+        end)
+    end
+    report_quest_done()
+end
+
+-- 定时器: 拉取任务 60s / 验收 60s (错峰)
+local quest_poll_timer = 0
+local quest_check_timer = 0
+
+minetest.register_globalstep(function(dtime)
+    quest_poll_timer = quest_poll_timer + dtime
+    if quest_poll_timer > 60 then
+        quest_poll_timer = 0
+        if town_center then fetch_build_quest() end
+    end
+    quest_check_timer = quest_check_timer + dtime
+    if quest_check_timer > 60 then
+        quest_check_timer = 0
+        check_build_quest()
+    end
+end)
+
+-- /buildquest: 查看当前挑战
+minetest.register_chatcommand("buildquest", {
+    description = "查看当前建造挑战",
+    func = function(name)
+        if not build_quest then
+            fetch_build_quest()
+            return true, "暂无任务(已向 Web 服务请求, 稍后再试)"
+        end
+        local req_str = ""
+        for _, r in ipairs(build_quest.requirements) do
+            req_str = req_str .. r.label .. "x" .. r.count .. " "
+        end
+        return true, build_quest.emoji .. " " .. build_quest.patron.display .. " 的挑战: " .. build_quest.title
+            .. "\n需要: " .. req_str .. "\n奖励: 声望+" .. (build_quest.reward_reputation or 15)
+            .. "\n提示: " .. build_quest.prompt_hint
+    end,
+})
+
+-- ============================================================
 -- 每日计划生成 (参照论文 Planning 模块)
 -- ============================================================
 local function generate_daily_plan(npc_name)

@@ -9,6 +9,7 @@ from urllib.parse import parse_qs
 from .paths import get_minetest_dir
 from .nlp import parse_input
 from .lua_gen import gen_lua
+from .buildquest import complete_current, current_quest
 from .llm import BLOCK_TYPE_TO_COLOR, blocks_to_lua, call_llm, call_llm_chat, call_llm_refine, cmds_to_blocks, parse_llm_json
 from .preview import gen_preview_blocks
 from .worlds import enable_mod_in_world, install_mod, launch_luanti, list_worlds
@@ -333,6 +334,12 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'town_relations':
                 # NPC 关系图谱数据
                 self._send_json(get_relations())
+            elif action == 'town_buildquest':
+                # 建造挑战: 当前任务 spec (Web 展示 + Lua 拉取验收用同一份)
+                self._send_json(current_quest())
+            elif action == 'town_buildquest_done':
+                # 建造挑战验收通过 (Lua 自动检测达标后调用): 轮换下一任务
+                self._send_json(complete_current())
             else:
                 self._send_json({"error": "未知操作"})
         else:
