@@ -152,3 +152,103 @@ def chat_with_npc(npc_name, user_message, history=None, mood=50, relation=50, we
         return None, "NPC 请求超时"
     except (ValueError, KeyError):
         return None, "响应解析失败"
+
+# ============================================================
+# NPC 关系图谱 (静态种子: 性格推导的两两好感 0-100 + 最近话题)
+# ============================================================
+NPC_PAIR_RELATIONS = {
+    ("baker", "merchant"): (72, "生意伙伴，常聊进货价"),
+    ("baker", "healer"): (60, "孙灵儿常来买全麦面包"),
+    ("baker", "scholar"): (45, "李书生是面包店常客"),
+    ("baker", "guard"): (50, "赵铁柱每天路过买早点"),
+    ("baker", "fisher"): (48, "周三用鲜鱼换过面包"),
+    ("scholar", "healer"): (58, "常切磋药理与古籍"),
+    ("scholar", "merchant"): (42, "钱掌柜想请他写招牌"),
+    ("scholar", "guard"): (52, "李书生教过他认字"),
+    ("scholar", "fisher"): (38, "周三的故事被记进了书"),
+    ("merchant", "guard"): (55, "市场治安全靠赵铁柱"),
+    ("merchant", "healer"): (44, "为药材价格讨价还价"),
+    ("merchant", "fisher"): (56, "收购周三的鱼来摆摊"),
+    ("guard", "healer"): (65, "巡逻受伤总找她包扎"),
+    ("guard", "fisher"): (46, "傍晚一起在河边喝酒"),
+    ("healer", "fisher"): (42, "采药时常见面打招呼"),
+}
+
+def get_relations():
+    """返回关系图谱数据: nodes + edges (15 对)"""
+    nodes = [{"name": n["name"], "display": n["display"], "emoji": n["emoji"], "color": n["color"]}
+             for n in TOWN_NPCS]
+    edges = []
+    for (a, b), (score, topic) in NPC_PAIR_RELATIONS.items():
+        edges.append({"a": a, "b": b, "score": score, "topic": topic})
+    return {"nodes": nodes, "edges": edges}
+
+# ============================================================
+# NPC 日记 (每天第一人称日记, 按日缓存防重复计费)
+# ============================================================
+_diary_cache = {}  # (npc_name, date_str) -> diary text
+
+DIARY_PROMPT = """以 {display} 的第一人称写一篇今天的日记(80字内，中文)。
+身份: {role}。住址: {location}。今天的任务: {quest}。天气: {weather}。
+最近在忙: {quest}。日记要有生活气息，可以提到其他镇民(面包师老王/学者李书生/商人钱掌柜/守卫赵铁柱/医者孙灵儿/渔夫周三)。只输出日记正文。"""
+
+def generate_diary(npc_name, weather="clear"):
+    """生成 NPC 第一人称日记。Returns: (diary, error)"""
+    npc = get_npc(npc_name)
+    if not npc:
+        return None, f"未知NPC: {npc_name}"
+    if not TOWN_AI_CONFIG["api_key"]:
+        return None, "未配置 STEPFUN_API_KEY 环境变量，无法生成日记"
+
+    import datetime
+    date_str = datetime.date.today().isoformat()
+    ck = (npc_name, date_str)
+    if ck in _diary_cache:
+        return _diary_cache[ck], None
+
+    prompt = DIARY_PROMPT.format(display=npc["display"], role=npc["role"],
+                                 location=npc["location"], quest=npc["quest"],
+                                 weather=weather)
+    messages = [
+        {"role": "system", "content": "你是乐高小镇的 NPC，写日记语气符合人设。"},
+        {"role": "user", "content": prompt},
+    ]
+    diary, err = _stepfun_chat(messages, temperature=0.9, max_tokens=300)
+    if err:
+        return None, err
+    _diary_cache[ck] = diary
+    return diary, None
+
+def _stepfun_chat(messages, temperature=0.8, max_tokens=500):
+    """StepFun 通用对话 (curl 固定端点)。Returns: (content, error)"""
+    import json
+    import subprocess
+    if TOWN_AI_CONFIG["base_url"] != STEPFUN_API_URL:
+        return None, "非法的 API 地址"
+    if not TOWN_AI_CONFIG["api_key"]:
+        return None, "未配置 STEPFUN_API_KEY 环境变量"
+    payload = {"model": TOWN_AI_CONFIG["model"], "messages": messages,
+               "temperature": temperature, "max_tokens": max_tokens}
+    payload_str = json.dumps(payload, ensure_ascii=False)
+    curl_cmd = [
+        "curl", "-s", "-X", "POST", STEPFUN_API_URL,
+        "-H", "Content-Type: application/json",
+        "-H", "Authorization: Bearer " + TOWN_AI_CONFIG["api_key"],
+        "--data-binary", "@-",
+        "--connect-timeout", "10",
+        "--max-time", "60",
+    ]
+    try:
+        result = subprocess.run(curl_cmd, input=payload_str,
+                                capture_output=True, text=True, timeout=70, shell=False)
+        if result.returncode != 0:
+            return None, "服务连接失败"
+        resp_data = json.loads(result.stdout)
+        if "error" in resp_data:
+            err = resp_data["error"]
+            return None, "API 错误: " + str(err.get("message", str(err)))[:200]
+        return resp_data["choices"][0]["message"]["content"], None
+    except subprocess.TimeoutExpired:
+        return None, "请求超时"
+    except (ValueError, KeyError, IndexError):
+        return None, "响应解析失败"
